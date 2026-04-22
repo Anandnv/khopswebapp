@@ -33,12 +33,14 @@
         </label>
         <p class="login-error" id="loginError"></p>
         <button class="button primary login-button" id="loginBtn">Login</button>
-        <p class="login-lockout hidden" id="loginLockout"></p>
+        <small class="login-hint">Prototype passwords: centres start with 1234, admin uses admin123. Admin can change centre passwords.</small>
       </div>
     </section>
 
     <div class="app-shell hidden" id="appShell">
-      <aside class="sidebar">
+      <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">&#9776;</button>
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
+      <aside class="sidebar" id="sidebar">
         <div class="brand">
           <div class="brand-mark">KH</div>
           <div>

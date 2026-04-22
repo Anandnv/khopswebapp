@@ -1239,9 +1239,36 @@ function refreshCenterLists() {
 
 function setupNavigation() {
   document.querySelectorAll(".nav-item").forEach((item) => {
-    item.addEventListener("click", () => showView(item.dataset.view));
+    item.addEventListener("click", () => {
+      showView(item.dataset.view);
+      closeSidebar();
+    });
   });
   document.getElementById("backToAdmin").addEventListener("click", () => showView("admin"));
+
+  // Mobile sidebar toggle
+  const toggle = document.getElementById("sidebarToggle");
+  const overlay = document.getElementById("sidebarOverlay");
+  const sidebar = document.getElementById("sidebar");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const open = sidebar.classList.toggle("open");
+      overlay.classList.toggle("open", open);
+      toggle.innerHTML = open ? "&#10005;" : "&#9776;";
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener("click", closeSidebar);
+  }
+}
+
+function closeSidebar() {
+  const sidebar = document.getElementById("sidebar");
+  const overlay = document.getElementById("sidebarOverlay");
+  const toggle = document.getElementById("sidebarToggle");
+  if (sidebar) sidebar.classList.remove("open");
+  if (overlay) overlay.classList.remove("open");
+  if (toggle) toggle.innerHTML = "&#9776;";
 }
 
 function setupLogin() {
