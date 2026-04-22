@@ -646,7 +646,16 @@ function renderPendingAlert() {
   if (!container) return;
 
   const missing = centers.filter((_, index) => {
-    return !(entries[index] && entries[index][reportDate]);
+    const entry = entries[index] && entries[index][reportDate];
+
+    const hasEntry = entry && (
+      Object.values(entry.op || {}).some(v => v > 0) ||
+      Object.values(entry.procedures || {}).some(p =>
+        Object.values(p || {}).some(v => v > 0)
+      )
+    );
+
+    return !hasEntry;
   });
 
   if (missing.length === 0) {
