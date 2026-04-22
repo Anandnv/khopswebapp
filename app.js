@@ -647,6 +647,12 @@ function renderPendingAlert() {
   const container = document.getElementById("pendingAlert");
   if (!container) return;
 
+  // ✅ ONLY SHOW FOR ADMIN
+  if (currentRole !== "admin") {
+    container.innerHTML = "";
+    return;
+  }
+
   const missing = centers.filter((_, index) => {
     const entry = entries[index] && entries[index][reportDate];
 
@@ -704,9 +710,13 @@ function renderConsolidated() {
      )
     );
 
-    const statusBadge = hasEntry
-      ? `<span style="color:green;font-weight:700">✔ Updated</span>`
-      : `<span style="color:red;font-weight:700">❌ Missing</span>`;
+    let statusBadge = "";
+
+if (currentRole === "admin") {
+  statusBadge = hasEntry
+    ? `<span style="color:green;font-weight:700">✔ Updated</span>`
+    : `<span style="color:red;font-weight:700">❌ Missing</span>`;
+    }   
 
     const row = document.createElement("tr");
 
