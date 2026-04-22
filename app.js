@@ -641,6 +641,33 @@ function getSelectedEntryDate() {
   return document.getElementById("entryDate")?.value || reportDate;
 }
 
+function renderPendingAlert() {
+  const container = document.getElementById("pendingAlert");
+  if (!container) return;
+
+  const missing = centers.filter((_, index) => {
+    return !(entries[index] && entries[index][reportDate]);
+  });
+
+  if (missing.length === 0) {
+    container.innerHTML = `
+      <div style="background:#e6f7ee;padding:10px;border-radius:8px;font-weight:600;color:#1b7f4b">
+        ✅ All centres updated today
+      </div>
+    `;
+    return;
+  }
+
+  const names = missing.map(c => c.name).join(", ");
+
+  container.innerHTML = `
+    <div style="background:#ffe6e6;padding:12px;border-radius:8px;font-weight:700;color:#b30000">
+      ❌ ${missing.length} centre(s) pending today<br/>
+      <small style="font-weight:500">${names}</small>
+    </div>
+  `;
+}
+
 function renderConsolidated() {
   refreshCenterRollups(reportDate);
 
@@ -734,6 +761,7 @@ function renderConsolidated() {
   document.getElementById("summaryPercent").textContent = `${percent}%`;
 
   renderOpsConsolidated();
+  renderPendingAlert();
 }
 
 function renderOpsConsolidated() {
