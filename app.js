@@ -47,7 +47,7 @@ function applyAppState(state) {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
   }
-  if (state.reportDate) reportDate = state.reportDate;
+  if (state.reportDate) setReportDate(state.reportDate);
   return true;
 }
 
@@ -534,6 +534,14 @@ function currencySafeNumber(value) {
   return Number(value || 0);
 }
 
+function setReportDate(date) {
+  reportDate = date;
+  // Keep monthSelect aligned so they never drift apart
+  const month = date.slice(0, 7);
+  const monthSelect = document.getElementById("monthSelect");
+  if (monthSelect && monthSelect.value !== month) monthSelect.value = month;
+}
+
 function getSelectedEntryDate() {
   return document.getElementById("entryDate")?.value || reportDate;
 }
@@ -556,7 +564,6 @@ function renderConsolidated() {
   opsPanel.classList.toggle("hidden", currentRole === "centre");
   dashboardGrid.classList.toggle("hidden", currentRole === "centre");
   metricGrid.classList.toggle("hidden", currentRole === "centre");
-  document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
 
   centerIndexes.forEach((index) => {
     const center = centers[index];
@@ -743,6 +750,22 @@ function updateFromDailyEntry() {
   }
 
   const date = document.getElementById("entryDate").value;
+
+  // Guard: disallow future dates
+  const today = new Date().toISOString().slice(0, 10);
+  if (date > today) {
+    showToast("Cannot save data for a future date.");
+    return;
+  }
+
+  // Guard: warn if entry date is in a different month from reportDate
+  if (!sameMonth(date, reportDate)) {
+    const ok = window.confirm(
+      `The entry date (${displayDate(date)}) is in a different month from the current report month (${displayDate(reportDate)}).\n\nThe report month will be updated to match. Continue?`
+    );
+    if (!ok) return;
+  }
+
   const center = centers[loggedInCentreIndex];
   const entry = getEntry(loggedInCentreIndex, date);
   entry.op = {};
@@ -770,7 +793,7 @@ function updateFromDailyEntry() {
     setProcedure(entry, procedure, "medisep", medisepToday);
   });
 
-  reportDate = date;
+  setReportDate(date);
   refreshCenterRollups(reportDate);
   renderConsolidated();
   renderBars();
@@ -796,15 +819,26 @@ function openCentre(index) {
 
 function renderTrend(center) {
   const chart = document.getElementById("trendChart");
-  const values = [1, 3, 2, 4, 3, 5, 2, 6, 4, 3, center.yesterday || 1];
-  const max = Math.max(...values);
+  const index = centers.indexOf(center);
+  // Build real daily intervention values from stored entries for the current month
+  const centreEntries = ensureCentreEntries(index);
+  const monthDates = Object.keys(centreEntries)
+    .filter((d) => sameMonth(d, reportDate))
+    .sort();
+
+  // Fallback to a small placeholder if no data yet
+  const values = monthDates.length
+    ? monthDates.map((d) => entryInterventionTotal(centreEntries[d]))
+    : [0];
+
+  const max = Math.max(...values, 1);
   chart.innerHTML = "";
-  values.forEach((value, index) => {
+  values.forEach((value, i) => {
     const bar = document.createElement("div");
     bar.className = "trend-bar";
     bar.style.height = `${Math.max(12, (value / max) * 210)}px`;
-    bar.title = `${value} procedures`;
-    bar.innerHTML = `<span>${index + 10}</span>`;
+    bar.title = `${monthDates[i] ? displayDate(monthDates[i]) : ""}: ${value} procedures`;
+    bar.innerHTML = `<span>${monthDates[i] ? monthDates[i].slice(-2) : i + 1}</span>`;
     chart.appendChild(bar);
   });
 }
@@ -1077,6 +1111,10 @@ function removeCenter(index) {
     showToast("At least one centre is required");
     return;
   }
+  const ok = window.confirm(
+    `Remove "${centers[index].name}"? All entry data for this centre will be permanently deleted.`
+  );
+  if (!ok) return;
   centers.splice(index, 1);
   const shifted = {};
   Object.keys(entries).forEach((key) => {
@@ -1146,7 +1184,7 @@ function setupEntryDate() {
 function setupMonthSelect() {
   const monthSelect = document.getElementById("monthSelect");
   monthSelect.addEventListener("change", () => {
-    reportDate = monthEndDates[monthSelect.value];
+    setReportDate(monthEndDates[monthSelect.value]);
     document.getElementById("exportMonth").value = monthSelect.value;
     syncExportDatesToMonth(monthSelect.value);
     refreshCenterRollups(reportDate);
@@ -1823,7 +1861,13 @@ function showToast(message) {
 
 async function init() {
   const loadedState = await setupPersistence();
-  if (!loadedState) {
+  // Only seed when there is genuinely no persisted data at all.
+  // Check entries object is empty so a Supabase failure that returns
+  // loadedState=false never overwrites real localStorage data.
+  const hasAnyEntries = Object.keys(entries).some(
+    (k) => Object.keys(entries[k] || {}).length > 0
+  );
+  if (!loadedState && !hasAnyEntries) {
     seedInitialEntries();
     persistSoon();
   } else {
