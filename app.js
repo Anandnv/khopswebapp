@@ -684,7 +684,14 @@ function renderConsolidated() {
     const percent = percentFor(center);
 
     // 🔴 NEW: Check if entry exists today
-    const hasEntry = entries[index] && entries[index][reportDate];
+    const entry = entries[index] && entries[index][reportDate];
+
+    const hasEntry = entry && (
+    Object.values(entry.op || {}).some(v => v > 0) ||
+    Object.values(entry.procedures || {}).some(p =>
+    Object.values(p || {}).some(v => v > 0)
+     )
+    );
 
     const statusBadge = hasEntry
       ? `<span style="color:green;font-weight:700">✔ Updated</span>`
