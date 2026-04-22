@@ -1,0 +1,10 @@
+{
+  "name": "kh-cardio-ops",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "node --check app.js",
+    "start": "npx serve ."
+  }
+}

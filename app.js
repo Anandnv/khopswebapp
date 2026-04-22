@@ -1,0 +1,1850 @@
+let centers = [
+  { name: "Tirur", username: "tirur", password: "1234", tillDate: 10, yesterday: 2, target: 25, cagToday: 1, cagTotal: 7, kasp: 7, general: 5, medisep: 0 },
+  { name: "Calicut", username: "calicut", password: "1234", tillDate: 5, yesterday: 0, target: 20, cagToday: 0, cagTotal: 5, kasp: 2, general: 2, medisep: 1 },
+  { name: "Kochi", username: "kochi", password: "1234", tillDate: 7, yesterday: 0, target: 25, cagToday: 2, cagTotal: 18, kasp: 0, general: 4, medisep: 3 },
+  { name: "Malappuram", username: "malappuram", password: "1234", tillDate: 15, yesterday: 0, target: 25, cagToday: 1, cagTotal: 7, kasp: 2, general: 13, medisep: 0 },
+  { name: "Perumpilavu", username: "perumpilavu", password: "1234", tillDate: 3, yesterday: 0, target: 15, cagToday: 0, cagTotal: 2, kasp: 1, general: 2, medisep: 0 },
+  { name: "Edappal", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 7, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 4, yesterday: 0, target: 23, cagToday: 0, cagTotal: 4, kasp: 1, general: 3, medisep: 0 }
+];
+
+let currentRole = "admin";
+let loggedInCentreIndex = 0;
+let loginType = "centre";
+let reportDate = "2026-04-20";
+let activeCentreDashboardIndex = 0;
+const entries = {};
+const STORAGE_KEY = "kh-cardio-ops-state-v1";
+const CONFIG = window.KH_CONFIG || {};
+let supabaseClient = null;
+let persistenceReady = false;
+let saveTimer = null;
+const monthEndDates = {
+  "2026-04": "2026-04-20",
+  "2026-03": "2026-03-31",
+  "2026-02": "2026-02-28"
+};
+const monthStartDates = {
+  "2026-04": "2026-04-01",
+  "2026-03": "2026-03-01",
+  "2026-02": "2026-02-01"
+};
+
+function getAppState() {
+  return {
+    centers,
+    procedureSettings,
+    entries,
+    reportDate
+  };
+}
+
+function applyAppState(state) {
+  if (!state) return false;
+  if (Array.isArray(state.centers)) centers = state.centers;
+  if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
+  if (state.entries && typeof state.entries === "object") {
+    Object.keys(entries).forEach((key) => delete entries[key]);
+    Object.assign(entries, state.entries);
+  }
+  if (state.reportDate) reportDate = state.reportDate;
+  return true;
+}
+
+async function setupPersistence() {
+  const hasSupabaseConfig = CONFIG.supabaseUrl && CONFIG.supabaseAnonKey && window.supabase;
+  if (hasSupabaseConfig) {
+    supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+  }
+  persistenceReady = true;
+  return loadPersistedState();
+}
+
+async function loadPersistedState() {
+  if (supabaseClient) {
+    const { data, error } = await supabaseClient
+      .from("app_state")
+      .select("state")
+      .eq("id", "main")
+      .maybeSingle();
+    if (!error && data?.state) return applyAppState(data.state);
+    if (error) console.warn("Supabase load failed, falling back to localStorage", error);
+  }
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return false;
+  try {
+    return applyAppState(JSON.parse(saved));
+  } catch (error) {
+    console.warn("Saved local state could not be parsed", error);
+    return false;
+  }
+}
+
+function persistSoon() {
+  if (!persistenceReady) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveAppState, 250);
+}
+
+async function saveAppState() {
+  const state = getAppState();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient
+    .from("app_state")
+    .upsert({ id: "main", state, updated_at: new Date().toISOString() });
+  if (error) console.warn("Supabase save failed", error);
+}
+
+let procedureSettings = [
+  { name: "CAG", counted: false, isCag: true, active: true },
+  { name: "PTCA", counted: true, isCag: false, active: true },
+  { name: "POBA only", counted: true, isCag: false, active: true },
+  { name: "Attempted PTCA", counted: true, isCag: false, active: true },
+  { name: "PTCA + POBA", counted: true, isCag: false, active: true },
+  { name: "PAG", counted: true, isCag: false, active: true },
+  { name: "PTA", counted: true, isCag: false, active: true },
+  { name: "TPI", counted: true, isCag: false, active: true },
+  { name: "PPI", counted: true, isCag: false, active: true },
+  { name: "DEVICE CLOSURE", counted: true, isCag: false, active: true },
+  { name: "ROTA / PLNRY", counted: true, isCag: false, active: true },
+  { name: "TMBRY", counted: true, isCag: false, active: true },
+  { name: "PERICARDIOCENTESIS", counted: false, isCag: false, active: true }
+];
+
+function activeProcedures() {
+  return procedureSettings.filter((procedure) => procedure.active).map((procedure) => procedure.name);
+}
+
+function countedProcedures() {
+  return procedureSettings.filter((procedure) => procedure.active && procedure.counted).map((procedure) => procedure.name);
+}
+
+function cagProcedures() {
+  return procedureSettings.filter((procedure) => procedure.active && procedure.isCag).map((procedure) => procedure.name);
+}
+
+function isCountedProcedure(procedureName) {
+  return procedureSettings.some((procedure) => procedure.name === procedureName && procedure.active && procedure.counted);
+}
+const opMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
+const adminOpsMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
+const referralMetrics = [
+  "Patient Referral - OP",
+  "Patient Referral - ECG",
+  "Patient Referral - ECHO",
+  "Patient Referral - TMT",
+  "Patient Referral - CAG",
+  "Patient Referral - PTCA",
+  "Patient Referral - Others"
+];
+
+function emptyEntry() {
+  return {
+    op: {},
+    referrals: {},
+    procedures: {}
+  };
+}
+
+function ensureCentreEntries(centerIndex) {
+  if (!entries[centerIndex]) entries[centerIndex] = {};
+  return entries[centerIndex];
+}
+
+function getEntry(centerIndex, date) {
+  const centreEntries = ensureCentreEntries(centerIndex);
+  if (!centreEntries[date]) centreEntries[date] = emptyEntry();
+  return centreEntries[date];
+}
+
+function sameMonth(dateA, dateB) {
+  return dateA.slice(0, 7) === dateB.slice(0, 7);
+}
+
+function displayDate(date) {
+  const [year, month, day] = date.split("-");
+  return `${day}-${month}-${year}`;
+}
+
+function selectedMonthLabel() {
+  const select = document.getElementById("monthSelect");
+  return select.options[select.selectedIndex].text;
+}
+
+function exportMonthLabel() {
+  const select = document.getElementById("exportMonth");
+  return select.options[select.selectedIndex].text;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
+}
+
+function datesBefore(centerIndex, date) {
+  return Object.keys(ensureCentreEntries(centerIndex))
+    .filter((entryDate) => sameMonth(entryDate, date) && entryDate < date)
+    .sort();
+}
+
+function datesBetween(centerIndex, fromDate, toDate) {
+  return Object.keys(ensureCentreEntries(centerIndex))
+    .filter((entryDate) => entryDate >= fromDate && entryDate <= toDate)
+    .sort();
+}
+
+function getProcedure(entry, procedure, payer) {
+  return currencySafeNumber(entry.procedures[procedure]?.[payer]);
+}
+
+function setProcedure(entry, procedure, payer, value) {
+  if (!entry.procedures[procedure]) entry.procedures[procedure] = {};
+  entry.procedures[procedure][payer] = currencySafeNumber(value);
+}
+
+function sumOpBefore(centerIndex, date, metric, source = "op") {
+  return datesBefore(centerIndex, date).reduce((total, entryDate) => {
+    return total + currencySafeNumber(entries[centerIndex][entryDate][source][metric]);
+  }, 0);
+}
+
+function sumProcedureBefore(centerIndex, date, procedure, payer) {
+  return datesBefore(centerIndex, date).reduce((total, entryDate) => {
+    return total + getProcedure(entries[centerIndex][entryDate], procedure, payer);
+  }, 0);
+}
+
+function procedureValuesFor(centerIndex, date, procedure) {
+  const entry = getEntry(centerIndex, date);
+  return {
+    generalPrev: sumProcedureBefore(centerIndex, date, procedure, "general"),
+    generalToday: getProcedure(entry, procedure, "general"),
+    kaspPrev: sumProcedureBefore(centerIndex, date, procedure, "kasp"),
+    kaspToday: getProcedure(entry, procedure, "kasp"),
+    medisepPrev: sumProcedureBefore(centerIndex, date, procedure, "medisep"),
+    medisepToday: getProcedure(entry, procedure, "medisep")
+  };
+}
+
+function interventionRollup(centerIndex, date) {
+  return countedProcedures().reduce(
+    (totals, procedure) => {
+      const values = procedureValuesFor(centerIndex, date, procedure);
+      totals.tillYesterday += values.generalPrev + values.kaspPrev + values.medisepPrev;
+      totals.today += values.generalToday + values.kaspToday + values.medisepToday;
+      totals.general += values.generalPrev + values.generalToday;
+      totals.kasp += values.kaspPrev + values.kaspToday;
+      totals.medisep += values.medisepPrev + values.medisepToday;
+      return totals;
+    },
+    { tillYesterday: 0, today: 0, general: 0, kasp: 0, medisep: 0 }
+  );
+}
+
+function cagRollup(centerIndex, date) {
+  return cagProcedures().reduce(
+    (totals, procedure) => {
+      const values = procedureValuesFor(centerIndex, date, procedure);
+      totals.today += values.generalToday + values.kaspToday + values.medisepToday;
+      totals.total += values.generalPrev + values.generalToday + values.kaspPrev + values.kaspToday + values.medisepPrev + values.medisepToday;
+      return totals;
+    },
+    { today: 0, total: 0 }
+  );
+}
+
+function opRollup(centerIndex, date, metric, source = "op") {
+  const entry = getEntry(centerIndex, date);
+  const tillYesterday = sumOpBefore(centerIndex, date, metric, source);
+  const today = currencySafeNumber(entry[source][metric]);
+  return { tillYesterday, today, total: tillYesterday + today };
+}
+
+function entryInterventionTotal(entry) {
+  return countedProcedures().reduce((total, procedure) => {
+    return total + getProcedure(entry, procedure, "general") + getProcedure(entry, procedure, "kasp") + getProcedure(entry, procedure, "medisep");
+  }, 0);
+}
+
+function entryCagTotal(entry) {
+  return cagProcedures().reduce((total, procedure) => {
+    return total + getProcedure(entry, procedure, "general") + getProcedure(entry, procedure, "kasp") + getProcedure(entry, procedure, "medisep");
+  }, 0);
+}
+
+function entryPayerTotals(entry) {
+  return countedProcedures().reduce(
+    (totals, procedure) => {
+      totals.general += getProcedure(entry, procedure, "general");
+      totals.kasp += getProcedure(entry, procedure, "kasp");
+      totals.medisep += getProcedure(entry, procedure, "medisep");
+      return totals;
+    },
+    { general: 0, kasp: 0, medisep: 0 }
+  );
+}
+
+function getFilteredCenterIndexes() {
+  if (currentRole === "centre") return [loggedInCentreIndex];
+  const value = document.getElementById("exportCentre")?.value || "all";
+  if (value === "all") return centers.map((_, index) => index);
+  return [Number(value)];
+}
+
+function getExportRange() {
+  return {
+    fromDate: document.getElementById("exportFromDate").value,
+    toDate: document.getElementById("exportToDate").value
+  };
+}
+
+function filteredDailyRows() {
+  const { fromDate, toDate } = getExportRange();
+  const rows = [];
+  getFilteredCenterIndexes().forEach((centerIndex) => {
+    datesBetween(centerIndex, fromDate, toDate).forEach((date) => {
+      const entry = entries[centerIndex][date];
+      const payers = entryPayerTotals(entry);
+      rows.push({
+        date,
+        center: centers[centerIndex].name,
+        intervention: entryInterventionTotal(entry),
+        cag: entryCagTotal(entry),
+        general: payers.general,
+        kasp: payers.kasp,
+        medisep: payers.medisep,
+        op: currencySafeNumber(entry.op["Total OP"]),
+        ip: currencySafeNumber(entry.op.IP),
+        newOp: currencySafeNumber(entry.op["New OP"]),
+        ecg: currencySafeNumber(entry.op.ECG),
+        echo: currencySafeNumber(entry.op.ECHO),
+        tmt: currencySafeNumber(entry.op.TMT)
+      });
+    });
+  });
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || a.center.localeCompare(b.center));
+}
+
+function filteredConsolidatedRows() {
+  const { toDate } = getExportRange();
+  return getFilteredCenterIndexes().map((centerIndex) => {
+    const center = centers[centerIndex];
+    const intervention = interventionRollup(centerIndex, toDate);
+    const cag = cagRollup(centerIndex, toDate);
+    const op = Object.fromEntries(adminOpsMetrics.map((metric) => [metric, opRollup(centerIndex, toDate, metric)]));
+    const total = intervention.tillYesterday + intervention.today;
+    return {
+      center: center.name,
+      target: center.target,
+      tillYesterday: intervention.tillYesterday,
+      today: intervention.today,
+      total,
+      percent: center.target ? Math.round((total / center.target) * 100) : 0,
+      cagToday: cag.today,
+      cagTotal: cag.total,
+      general: intervention.general,
+      kasp: intervention.kasp,
+      medisep: intervention.medisep,
+      opTotal: op["Total OP"].total,
+      ipTotal: op.IP.total,
+      newOpTotal: op["New OP"].total,
+      ecgTotal: op.ECG.total,
+      echoTotal: op.ECHO.total,
+      tmtTotal: op.TMT.total
+    };
+  });
+}
+
+function consolidatedTotals(rows) {
+  return rows.reduce(
+    (totals, row) => {
+      ["target", "tillYesterday", "today", "total", "cagToday", "cagTotal", "general", "kasp", "medisep", "opTotal", "ipTotal", "newOpTotal", "ecgTotal", "echoTotal", "tmtTotal"].forEach((key) => {
+        totals[key] += row[key] || 0;
+      });
+      return totals;
+    },
+    { target: 0, tillYesterday: 0, today: 0, total: 0, cagToday: 0, cagTotal: 0, general: 0, kasp: 0, medisep: 0, opTotal: 0, ipTotal: 0, newOpTotal: 0, ecgTotal: 0, echoTotal: 0, tmtTotal: 0 }
+  );
+}
+
+function selectedReportType() {
+  return document.getElementById("exportReportType")?.value || "consolidated";
+}
+
+function reportTotals(rows) {
+  return rows.reduce(
+    (totals, row) => {
+      Object.keys(totals).forEach((key) => {
+        if (key !== "days") totals[key] += row[key] || 0;
+      });
+      totals.days.add(row.date);
+      return totals;
+    },
+    { intervention: 0, cag: 0, general: 0, kasp: 0, medisep: 0, op: 0, ip: 0, newOp: 0, ecg: 0, echo: 0, tmt: 0, days: new Set() }
+  );
+}
+
+function reportForecast(rows) {
+  const totals = reportTotals(rows);
+  const dayCount = Math.max(1, totals.days.size);
+  const average = totals.intervention / dayCount;
+  const toDate = new Date(`${getExportRange().toDate}T00:00:00`);
+  const lastDay = new Date(toDate.getFullYear(), toDate.getMonth() + 1, 0).getDate();
+  const selectedTarget = getFilteredCenterIndexes().reduce((sum, index) => sum + currencySafeNumber(centers[index].target), 0);
+  const projected = Math.round(average * lastDay);
+  const achievement = selectedTarget ? Math.round((totals.intervention / selectedTarget) * 100) : 0;
+  const projectedAchievement = selectedTarget ? Math.round((projected / selectedTarget) * 100) : 0;
+  const remainingDays = Math.max(0, lastDay - toDate.getDate());
+  const requiredPerDay = selectedTarget && remainingDays ? Math.max(0, (selectedTarget - totals.intervention) / remainingDays) : 0;
+  return {
+    average,
+    projected,
+    selectedTarget,
+    achievement,
+    projectedAchievement,
+    remainingDays,
+    requiredPerDay,
+    dayCount,
+    lastDay
+  };
+}
+
+function refreshCenterRollups(date = reportDate) {
+  centers.forEach((center, index) => {
+    const intervention = interventionRollup(index, date);
+    const cag = cagRollup(index, date);
+    center.tillDate = intervention.tillYesterday;
+    center.yesterday = intervention.today;
+    center.cagToday = cag.today;
+    center.cagTotal = cag.total;
+    center.general = intervention.general;
+    center.kasp = intervention.kasp;
+    center.medisep = intervention.medisep;
+    center.ops = Object.fromEntries(adminOpsMetrics.map((metric) => [metric, opRollup(index, date, metric)]));
+  });
+}
+
+function seedInitialEntries() {
+  centers.forEach((center, index) => {
+    const previous = getEntry(index, "2026-04-19");
+    const today = getEntry(index, "2026-04-20");
+    previous.op = {
+      "Total OP": 520 + index * 18,
+      IP: 80 + index * 3,
+      "New OP": 91 + index * 5,
+      ECG: 188 + index * 8,
+      ECHO: 334 + index * 6,
+      TMT: 43 + index
+    };
+    today.op = {
+      "Total OP": 62 - index * 3 > 0 ? 62 - index * 3 : 12,
+      IP: 11 + index,
+      "New OP": 6 + index,
+      ECG: 23 + index,
+      ECHO: 36 - index > 0 ? 36 - index : 8,
+      TMT: 6
+    };
+    previous.referrals = Object.fromEntries(referralMetrics.map((metric) => [metric, index % 3]));
+    today.referrals = Object.fromEntries(referralMetrics.map((metric) => [metric, 0]));
+    setProcedure(previous, "PTCA", "general", Math.max(0, center.general - center.yesterday));
+    setProcedure(previous, "PTCA", "kasp", center.kasp);
+    setProcedure(previous, "PTCA", "medisep", center.medisep);
+    setProcedure(today, "PTCA", "general", center.yesterday);
+    setProcedure(previous, "CAG", "general", Math.max(0, center.cagTotal - center.cagToday));
+    setProcedure(today, "CAG", "general", center.cagToday);
+
+    const marchPrevious = getEntry(index, "2026-03-30");
+    const marchToday = getEntry(index, "2026-03-31");
+    marchPrevious.op = {
+      "Total OP": 410 + index * 14,
+      IP: 65 + index * 2,
+      "New OP": 74 + index * 3,
+      ECG: 142 + index * 6,
+      ECHO: 255 + index * 5,
+      TMT: 31 + index
+    };
+    marchToday.op = {
+      "Total OP": 36 + index,
+      IP: 8 + index,
+      "New OP": 5 + index,
+      ECG: 15 + index,
+      ECHO: 22 + index,
+      TMT: 3
+    };
+    setProcedure(marchPrevious, "PTCA", "general", 3 + index);
+    setProcedure(marchPrevious, "PTCA", "kasp", index % 4);
+    setProcedure(marchPrevious, "CAG", "general", 9 + index);
+    setProcedure(marchToday, "PTCA", "general", index % 2);
+    setProcedure(marchToday, "CAG", "general", 1);
+
+    const febPrevious = getEntry(index, "2026-02-27");
+    const febToday = getEntry(index, "2026-02-28");
+    febPrevious.op = {
+      "Total OP": 300 + index * 12,
+      IP: 48 + index,
+      "New OP": 58 + index * 2,
+      ECG: 110 + index * 4,
+      ECHO: 190 + index * 4,
+      TMT: 25 + index
+    };
+    febToday.op = {
+      "Total OP": 29 + index,
+      IP: 5 + index,
+      "New OP": 4 + index,
+      ECG: 11 + index,
+      ECHO: 18 + index,
+      TMT: 2
+    };
+    setProcedure(febPrevious, "PTCA", "general", 2 + index);
+    setProcedure(febPrevious, "PTCA", "kasp", index % 3);
+    setProcedure(febPrevious, "CAG", "general", 7 + index);
+    setProcedure(febToday, "PTCA", "general", index % 2);
+    setProcedure(febToday, "CAG", "general", 1);
+  });
+  refreshCenterRollups(reportDate);
+}
+
+function totalFor(center) {
+  return center.tillDate + center.yesterday;
+}
+
+function percentFor(center) {
+  return center.target ? Math.round((totalFor(center) / center.target) * 100) : 0;
+}
+
+function statusClass(percent) {
+  if (percent >= 80) return "status-good";
+  if (percent >= 40) return "status-watch";
+  return "status-risk";
+}
+
+function statusColor(percent) {
+  if (percent >= 80) return "var(--green)";
+  if (percent >= 40) return "var(--yellow)";
+  return "var(--red)";
+}
+
+function currencySafeNumber(value) {
+  return Number(value || 0);
+}
+
+function getSelectedEntryDate() {
+  return document.getElementById("entryDate")?.value || reportDate;
+}
+
+function renderConsolidated() {
+  refreshCenterRollups(reportDate);
+  document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
+  document.querySelector("#summaryPercent").nextElementSibling.textContent = `Till ${displayDate(reportDate)}`;
+  const centerIndexes = centers.map((_, index) => index);
+  const tbody = document.querySelector("#consolidatedTable tbody");
+  const tfoot = document.querySelector("#consolidatedTable tfoot");
+  tbody.innerHTML = "";
+  const reportDownloadPanel = document.querySelector("#adminView > .panel");
+  const procedurePanel = document.getElementById("consolidatedTable").closest(".panel");
+  const opsPanel = document.getElementById("opsConsolidatedTable").closest(".panel");
+  const dashboardGrid = document.querySelector("#adminView > .dashboard-grid");
+  const metricGrid = document.querySelector("#adminView > .metric-grid");
+  reportDownloadPanel.classList.toggle("hidden", false);
+  procedurePanel.classList.toggle("hidden", false);
+  opsPanel.classList.toggle("hidden", currentRole === "centre");
+  dashboardGrid.classList.toggle("hidden", currentRole === "centre");
+  metricGrid.classList.toggle("hidden", currentRole === "centre");
+  document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
+
+  centerIndexes.forEach((index) => {
+    const center = centers[index];
+    const percent = percentFor(center);
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${center.name}</td>
+      <td>${center.tillDate}</td>
+      <td>${center.yesterday}</td>
+      <td class="${statusClass(percent)}">${totalFor(center)}</td>
+      <td>${center.target}</td>
+      <td>${center.cagToday}</td>
+      <td>${center.cagTotal}</td>
+      <td>${center.kasp}</td>
+      <td>${center.general}</td>
+      <td>${center.medisep}</td>
+      <td>${percent}</td>
+    `;
+    row.addEventListener("click", () => {
+      if (currentRole === "centre" && index !== loggedInCentreIndex) {
+        showToast("You can open only your own centre details");
+        return;
+      }
+      openCentre(index);
+    });
+    tbody.appendChild(row);
+  });
+
+  const totals = centerIndexes.reduce(
+    (acc, center) => {
+      center = centers[center];
+      acc.tillDate += center.tillDate;
+      acc.yesterday += center.yesterday;
+      acc.target += center.target;
+      acc.cagToday += center.cagToday;
+      acc.cagTotal += center.cagTotal;
+      acc.kasp += center.kasp;
+      acc.general += center.general;
+      acc.medisep += center.medisep;
+      return acc;
+    },
+    { tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 }
+  );
+  const grandTotal = totals.tillDate + totals.yesterday;
+  const percent = totals.target ? Math.round((grandTotal / totals.target) * 100) : 0;
+
+  tfoot.innerHTML = `
+    <tr>
+      <td>Total</td>
+      <td>${totals.tillDate}</td>
+      <td>${totals.yesterday}</td>
+      <td>${grandTotal}</td>
+      <td>${totals.target}</td>
+      <td>${totals.cagToday}</td>
+      <td>${totals.cagTotal}</td>
+      <td>${totals.kasp}</td>
+      <td>${totals.general}</td>
+      <td>${totals.medisep}</td>
+      <td>${percent}</td>
+    </tr>
+  `;
+
+  document.getElementById("summaryIntervention").textContent = grandTotal;
+  document.getElementById("summaryCag").textContent = totals.cagTotal;
+  document.getElementById("summaryTarget").textContent = totals.target;
+  document.getElementById("summaryPercent").textContent = `${percent}%`;
+  renderOpsConsolidated();
+}
+
+function renderOpsConsolidated() {
+  const tbody = document.querySelector("#opsConsolidatedTable tbody");
+  if (!tbody) return;
+  document.getElementById("opsReportTitle").textContent = `OP & Diagnostics Till ${displayDate(reportDate)}`;
+  tbody.innerHTML = centers.map((center, index) => {
+    const cells = adminOpsMetrics.flatMap((metric) => {
+      const values = center.ops?.[metric] || opRollup(index, reportDate, metric);
+      return [`<td>${values.tillYesterday}</td>`, `<td>${values.today}</td>`, `<td>${values.total}</td>`];
+    }).join("");
+    return `<tr><td>${center.name}</td>${cells}</tr>`;
+  }).join("");
+}
+
+function renderBars() {
+  const container = document.getElementById("achievementBars");
+  container.innerHTML = "";
+  centers.forEach((center) => {
+    const percent = percentFor(center);
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML = `
+      <span>${center.name}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.min(percent, 100)}%; background:${statusColor(percent)}"></div></div>
+      <span>${percent}%</span>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function renderPayerSplit() {
+  const totals = centers.reduce(
+    (acc, center) => {
+      acc.kasp += center.kasp;
+      acc.general += center.general;
+      acc.medisep += center.medisep;
+      return acc;
+    },
+    { kasp: 0, general: 0, medisep: 0 }
+  );
+  const sum = totals.kasp + totals.general + totals.medisep || 1;
+  const generalPct = Math.round((totals.general / sum) * 100);
+  const kaspPct = Math.round((totals.kasp / sum) * 100);
+  const medisepPct = 100 - generalPct - kaspPct;
+  document.getElementById("payerDonut").style.background = `conic-gradient(var(--blue) 0 ${generalPct}%, var(--teal) ${generalPct}% ${generalPct + kaspPct}%, var(--purple) ${generalPct + kaspPct}% 100%)`;
+  document.getElementById("payerSplit").innerHTML = `
+    <div class="split-item"><span>General</span><strong>${totals.general} (${generalPct}%)</strong></div>
+    <div class="split-item"><span>KASP</span><strong>${totals.kasp} (${kaspPct}%)</strong></div>
+    <div class="split-item"><span>MEDISEP</span><strong>${totals.medisep} (${medisepPct}%)</strong></div>
+  `;
+}
+
+function showView(name) {
+  if (currentRole === "admin" && name === "entry") name = "admin";
+  if (currentRole === "centre" && !["admin", "entry", "centre"].includes(name)) name = "admin";
+  document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+  document.getElementById(`${name}View`).classList.add("active");
+  document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === name));
+  const titles = {
+    admin: "Consolidated Dashboard",
+    entry: "Daily Entry",
+    targets: "Monthly Targets",
+    procedures: "Procedure Settings",
+    users: "User Controls",
+    centre: "Centre Dashboard"
+  };
+  document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
+  updateTopbarActions(name);
+}
+
+function updateTopbarActions(name) {
+  document.getElementById("saveBtn").classList.toggle("hidden", currentRole !== "centre" || name !== "entry");
+  document.getElementById("monthSelect").classList.toggle("hidden", currentRole === "centre");
+}
+
+function setRole(role, centreIndex = loggedInCentreIndex) {
+  currentRole = role;
+  loggedInCentreIndex = centreIndex;
+  document.body.classList.toggle("centre-mode", role === "centre");
+
+  if (role === "centre") {
+    const centre = centers[loggedInCentreIndex];
+    document.getElementById("signedInName").textContent = `${centre.name} Centre User`;
+    document.getElementById("signedInAccess").textContent = `Can update only ${centre.name} daily data`;
+    document.getElementById("entryCentreName").textContent = `${centre.name} Centre Login`;
+    document.getElementById("entryAccessMessage").textContent = `This user can enter only ${centre.name} data. Other centres are not selectable.`;
+    document.getElementById("lockedCentreName").textContent = centre.name;
+    renderEntryForCurrentDate();
+    document.getElementById("exportCentre").value = String(loggedInCentreIndex);
+    document.getElementById("exportCentre").disabled = true;
+    renderConsolidated();
+    renderAdminReportPreview();
+    showView("entry");
+    return;
+  }
+
+  document.getElementById("signedInName").textContent = "Admin User";
+  document.getElementById("signedInAccess").textContent = "Full centre access, view only";
+  document.getElementById("exportCentre").disabled = false;
+  renderConsolidated();
+  renderAdminReportPreview();
+  showView("admin");
+}
+
+function renderEntryForCurrentDate() {
+  const date = getSelectedEntryDate();
+  renderEntryList("opEntry", opMetrics, "op", loggedInCentreIndex, date);
+  renderEntryList("referralEntry", referralMetrics, "referrals", loggedInCentreIndex, date);
+  renderProcedureTable("procedureEntryTable", true, loggedInCentreIndex, date);
+}
+
+function updateFromDailyEntry() {
+  if (currentRole !== "centre") {
+    showToast("Admin is view only. Login as a centre to enter daily data.");
+    return;
+  }
+
+  const date = document.getElementById("entryDate").value;
+  const center = centers[loggedInCentreIndex];
+  const entry = getEntry(loggedInCentreIndex, date);
+  entry.op = {};
+  entry.referrals = {};
+  entry.procedures = {};
+
+  document.querySelectorAll("#opEntry .entry-row:not(.header)").forEach((row) => {
+    const metric = row.dataset.metric;
+    entry.op[metric] = currencySafeNumber(row.querySelector("input").value);
+  });
+
+  document.querySelectorAll("#referralEntry .entry-row:not(.header)").forEach((row) => {
+    const metric = row.dataset.metric;
+    entry.referrals[metric] = currencySafeNumber(row.querySelector("input").value);
+  });
+
+  document.querySelectorAll("#procedureEntryTable tbody tr").forEach((row) => {
+    const cells = row.querySelectorAll("td");
+    const procedure = cells[0].textContent.trim();
+    const generalToday = currencySafeNumber(cells[2].querySelector("input")?.value);
+    const kaspToday = currencySafeNumber(cells[5].querySelector("input")?.value);
+    const medisepToday = currencySafeNumber(cells[8].querySelector("input")?.value);
+    setProcedure(entry, procedure, "general", generalToday);
+    setProcedure(entry, procedure, "kasp", kaspToday);
+    setProcedure(entry, procedure, "medisep", medisepToday);
+  });
+
+  reportDate = date;
+  refreshCenterRollups(reportDate);
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderEntryForCurrentDate();
+  persistSoon();
+  showToast(`${center.name} entry saved and reflected in reports`);
+}
+
+function openCentre(index) {
+  activeCentreDashboardIndex = index;
+  const center = centers[index];
+  const percent = percentFor(center);
+  document.getElementById("centreName").textContent = center.name;
+  document.getElementById("centreTarget").textContent = center.target;
+  document.getElementById("centreTotal").textContent = totalFor(center);
+  document.getElementById("centrePercent").textContent = `${percent}%`;
+  renderTrend(center);
+  renderSnapshot(center);
+  renderProcedureTable("centreProcedureTable", false, index, reportDate);
+  showView("centre");
+}
+
+function renderTrend(center) {
+  const chart = document.getElementById("trendChart");
+  const values = [1, 3, 2, 4, 3, 5, 2, 6, 4, 3, center.yesterday || 1];
+  const max = Math.max(...values);
+  chart.innerHTML = "";
+  values.forEach((value, index) => {
+    const bar = document.createElement("div");
+    bar.className = "trend-bar";
+    bar.style.height = `${Math.max(12, (value / max) * 210)}px`;
+    bar.title = `${value} procedures`;
+    bar.innerHTML = `<span>${index + 10}</span>`;
+    chart.appendChild(bar);
+  });
+}
+
+function renderSnapshot(center) {
+  const index = centers.indexOf(center);
+  const op = (metric) => center.ops?.[metric]?.today ?? opRollup(index, reportDate, metric).today;
+  document.getElementById("snapshotGrid").innerHTML = `
+    <div class="snapshot-item"><span>OP Today</span><strong>${op("Total OP")}</strong></div>
+    <div class="snapshot-item"><span>IP Today</span><strong>${op("IP")}</strong></div>
+    <div class="snapshot-item"><span>CAG Today</span><strong>${center.cagToday}</strong></div>
+    <div class="snapshot-item"><span>Intervention Today</span><strong>${center.yesterday}</strong></div>
+    <div class="snapshot-item"><span>ECG Today</span><strong>${op("ECG")}</strong></div>
+    <div class="snapshot-item"><span>Echo Today</span><strong>${op("ECHO")}</strong></div>
+  `;
+}
+
+function procedureRowHtml(procedure, index, editable = false, centerIndex = loggedInCentreIndex, date = getSelectedEntryDate()) {
+  const values = procedureValuesFor(centerIndex, date, procedure);
+  const generalTotal = values.generalPrev + values.generalToday;
+  const kaspTotal = values.kaspPrev + values.kaspToday;
+  const medisepTotal = values.medisepPrev + values.medisepToday;
+  const totalPrev = values.generalPrev + values.kaspPrev + values.medisepPrev;
+  const totalToday = values.generalToday + values.kaspToday + values.medisepToday;
+  const grandTotal = totalPrev + totalToday;
+  const todayCell = (value) => editable ? `<input type="number" min="0" value="${value}" />` : value;
+
+  return `
+    <tr>
+      <td>${procedure}</td>
+      <td>${values.generalPrev}</td>
+      <td>${todayCell(values.generalToday)}</td>
+      <td><output>${generalTotal}</output></td>
+      <td>${values.kaspPrev}</td>
+      <td>${todayCell(values.kaspToday)}</td>
+      <td><output>${kaspTotal}</output></td>
+      <td>${values.medisepPrev}</td>
+      <td>${todayCell(values.medisepToday)}</td>
+      <td><output>${medisepTotal}</output></td>
+      <td><output>${totalPrev}</output></td>
+      <td><output>${totalToday}</output></td>
+      <td><output>${grandTotal}</output></td>
+    </tr>
+  `;
+}
+
+function renderProcedureTable(tableId, editable = false, centerIndex = loggedInCentreIndex, date = getSelectedEntryDate()) {
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  tbody.innerHTML = activeProcedures().map((procedure, index) => procedureRowHtml(procedure, index, editable, centerIndex, date)).join("");
+  if (editable) bindProcedureInputs(tbody);
+}
+
+function bindProcedureInputs(tbody) {
+  tbody.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      const row = input.closest("tr");
+      const cells = row.querySelectorAll("td");
+      const generalPrev = currencySafeNumber(cells[1].textContent);
+      const generalToday = currencySafeNumber(cells[2].querySelector("input").value);
+      const kaspPrev = currencySafeNumber(cells[4].textContent);
+      const kaspToday = currencySafeNumber(cells[5].querySelector("input").value);
+      const medisepPrev = currencySafeNumber(cells[7].textContent);
+      const medisepToday = currencySafeNumber(cells[8].querySelector("input").value);
+      cells[3].querySelector("output").textContent = generalPrev + generalToday;
+      cells[6].querySelector("output").textContent = kaspPrev + kaspToday;
+      cells[9].querySelector("output").textContent = medisepPrev + medisepToday;
+      cells[10].querySelector("output").textContent = generalPrev + kaspPrev + medisepPrev;
+      cells[11].querySelector("output").textContent = generalToday + kaspToday + medisepToday;
+      cells[12].querySelector("output").textContent = generalPrev + generalToday + kaspPrev + kaspToday + medisepPrev + medisepToday;
+    });
+  });
+}
+
+function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentreIndex, date = getSelectedEntryDate()) {
+  const container = document.getElementById(id);
+  container.innerHTML = `
+    <div class="entry-row header">
+      <span>Item</span>
+      <span>Till Yesterday</span>
+      <span>Today</span>
+      <span>Total</span>
+    </div>
+  `;
+  const entry = getEntry(centerIndex, date);
+  metrics.forEach((metric, index) => {
+    const prev = sumOpBefore(centerIndex, date, metric, source);
+    const today = currencySafeNumber(entry[source][metric]);
+    const row = document.createElement("div");
+    row.className = "entry-row";
+    row.dataset.metric = metric;
+    row.innerHTML = `
+      <span>${metric}</span>
+      <output>${prev}</output>
+      <input type="number" min="0" value="${today}" aria-label="${metric} current day" />
+      <output>${prev + today}</output>
+    `;
+    const input = row.querySelector("input");
+    const total = row.querySelectorAll("output")[1];
+    input.addEventListener("input", () => {
+      total.textContent = prev + currencySafeNumber(input.value);
+    });
+    container.appendChild(row);
+  });
+}
+
+function renderTargets() {
+  const grid = document.getElementById("targetGrid");
+  grid.innerHTML = "";
+  centers.forEach((center) => {
+    const card = document.createElement("div");
+    card.className = "target-card";
+    card.innerHTML = `
+      <div><strong>${center.name}</strong><span>April 2026 target</span></div>
+      <input type="number" min="0" value="${center.target}" aria-label="${center.name} target" />
+    `;
+    const input = card.querySelector("input");
+    input.addEventListener("input", () => {
+      center.target = currencySafeNumber(input.value);
+      renderConsolidated();
+      renderBars();
+      renderAdminReportPreview();
+      persistSoon();
+    });
+    grid.appendChild(card);
+  });
+}
+
+function renderUsers() {
+  const list = document.getElementById("userList");
+  list.innerHTML = centers.map((center, index) => `
+    <div class="user-card">
+      <div>
+        <strong>${center.name}</strong>
+        <span>Username and password for centre login</span>
+      </div>
+      <input type="text" value="${center.username}" aria-label="${center.name} username" data-user-field="username" data-center-index="${index}" />
+      <input type="text" value="${center.password}" aria-label="${center.name} password" data-user-field="password" data-center-index="${index}" />
+      <button class="button secondary" data-remove-center="${index}">Remove</button>
+    </div>
+  `).join("");
+  list.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("change", () => {
+      centers[Number(input.dataset.centerIndex)][input.dataset.userField] = input.value.trim() || input.value;
+      refreshCenterLists();
+      persistSoon();
+      showToast("Centre login updated");
+    });
+  });
+  list.querySelectorAll("[data-remove-center]").forEach((button) => {
+    button.addEventListener("click", () => removeCenter(Number(button.dataset.removeCenter)));
+  });
+}
+
+function renderProcedures() {
+  const tbody = document.querySelector("#procedureSettingsTable tbody");
+  tbody.innerHTML = procedureSettings.map((procedure, index) => `
+    <tr>
+      <td><input type="text" value="${procedure.name}" data-procedure-name="${index}" aria-label="Procedure name" /></td>
+      <td><input type="checkbox" data-procedure-field="counted" data-procedure-index="${index}" ${procedure.counted ? "checked" : ""} /></td>
+      <td><input type="checkbox" data-procedure-field="isCag" data-procedure-index="${index}" ${procedure.isCag ? "checked" : ""} /></td>
+      <td>${procedure.active ? "Active" : "Inactive"}</td>
+      <td><button class="button secondary" data-remove-procedure="${index}">${procedure.active ? "Remove" : "Restore"}</button></td>
+    </tr>
+  `).join("");
+  tbody.querySelectorAll("[data-procedure-name]").forEach((input) => {
+    input.addEventListener("change", () => renameProcedure(Number(input.dataset.procedureName), input.value));
+  });
+  tbody.querySelectorAll("input").forEach((input) => {
+    if (input.dataset.procedureName) return;
+    input.addEventListener("change", () => {
+      procedureSettings[Number(input.dataset.procedureIndex)][input.dataset.procedureField] = input.checked;
+      refreshAfterProcedureChange();
+      persistSoon();
+    });
+  });
+  tbody.querySelectorAll("[data-remove-procedure]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const procedure = procedureSettings[Number(button.dataset.removeProcedure)];
+      procedure.active = !procedure.active;
+      refreshAfterProcedureChange();
+      persistSoon();
+    });
+  });
+}
+
+function renameProcedure(index, newName) {
+  const cleanedName = newName.trim();
+  const procedure = procedureSettings[index];
+  const oldName = procedure.name;
+  if (!cleanedName) {
+    renderProcedures();
+    showToast("Procedure name cannot be blank");
+    return;
+  }
+  if (procedureSettings.some((item, itemIndex) => itemIndex !== index && item.name.toLowerCase() === cleanedName.toLowerCase())) {
+    renderProcedures();
+    showToast("Procedure name already exists");
+    return;
+  }
+  procedure.name = cleanedName;
+  Object.values(entries).forEach((centreEntries) => {
+    Object.values(centreEntries).forEach((entry) => {
+      if (entry.procedures[oldName]) {
+        entry.procedures[cleanedName] = entry.procedures[oldName];
+        delete entry.procedures[oldName];
+      }
+    });
+  });
+  refreshAfterProcedureChange();
+  persistSoon();
+  showToast("Procedure name updated");
+}
+
+function refreshAfterProcedureChange() {
+  refreshCenterRollups(reportDate);
+  renderProcedures();
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderEntryForCurrentDate();
+  renderAdminReportPreview();
+}
+
+function addProcedure() {
+  const input = document.getElementById("newProcedureName");
+  const name = input.value.trim();
+  if (!name) return;
+  if (procedureSettings.some((procedure) => procedure.name.toLowerCase() === name.toLowerCase())) {
+    showToast("Procedure already exists");
+    return;
+  }
+  procedureSettings.push({ name, counted: true, isCag: false, active: true });
+  input.value = "";
+  refreshAfterProcedureChange();
+  persistSoon();
+  showToast("Procedure added");
+}
+
+function addCenter() {
+  const input = document.getElementById("newCentreName");
+  const name = input.value.trim();
+  if (!name) return;
+  centers.push({
+    name,
+    username: name.toLowerCase().replace(/\s+/g, ""),
+    password: "1234",
+    tillDate: 0,
+    yesterday: 0,
+    target: 0,
+    cagToday: 0,
+    cagTotal: 0,
+    kasp: 0,
+    general: 0,
+    medisep: 0
+  });
+  input.value = "";
+  refreshCenterLists();
+  renderTargets();
+  renderUsers();
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderAdminReportPreview();
+  persistSoon();
+  showToast("Centre added");
+}
+
+function removeCenter(index) {
+  if (centers.length <= 1) {
+    showToast("At least one centre is required");
+    return;
+  }
+  centers.splice(index, 1);
+  const shifted = {};
+  Object.keys(entries).forEach((key) => {
+    const oldIndex = Number(key);
+    if (oldIndex < index) shifted[oldIndex] = entries[oldIndex];
+    if (oldIndex > index) shifted[oldIndex - 1] = entries[oldIndex];
+  });
+  Object.keys(entries).forEach((key) => delete entries[key]);
+  Object.assign(entries, shifted);
+  loggedInCentreIndex = Math.min(loggedInCentreIndex, centers.length - 1);
+  refreshCenterLists();
+  renderTargets();
+  renderUsers();
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderAdminReportPreview();
+  persistSoon();
+  showToast("Centre removed");
+}
+
+function refreshCenterLists() {
+  const loginSelect = document.getElementById("loginCentre");
+  if (loginSelect) loginSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+  const exportSelect = document.getElementById("exportCentre");
+  if (exportSelect) exportSelect.innerHTML = `<option value="all">All Centres</option>` + centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+  if (currentRole === "centre" && exportSelect) {
+    exportSelect.value = String(loggedInCentreIndex);
+    exportSelect.disabled = true;
+  }
+}
+
+function setupNavigation() {
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.addEventListener("click", () => showView(item.dataset.view));
+  });
+  document.getElementById("backToAdmin").addEventListener("click", () => showView("admin"));
+}
+
+function setupLogin() {
+  const centreSelect = document.getElementById("loginCentre");
+  centreSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+
+  document.querySelectorAll(".login-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      loginType = tab.dataset.loginType;
+      document.querySelectorAll(".login-tab").forEach((item) => item.classList.toggle("active", item === tab));
+      document.querySelector(".centre-login-field").classList.toggle("hidden", loginType === "admin");
+      document.getElementById("loginPassword").value = "";
+      document.getElementById("loginError").textContent = "";
+    });
+  });
+
+  document.getElementById("loginBtn").addEventListener("click", login);
+  document.getElementById("loginPassword").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") login();
+  });
+  document.getElementById("logoutBtn").addEventListener("click", logout);
+}
+
+function setupEntryDate() {
+  document.getElementById("entryDate").addEventListener("change", () => {
+    renderEntryForCurrentDate();
+  });
+}
+
+function setupMonthSelect() {
+  const monthSelect = document.getElementById("monthSelect");
+  monthSelect.addEventListener("change", () => {
+    reportDate = monthEndDates[monthSelect.value];
+    document.getElementById("exportMonth").value = monthSelect.value;
+    syncExportDatesToMonth(monthSelect.value);
+    refreshCenterRollups(reportDate);
+    renderConsolidated();
+    renderBars();
+    renderPayerSplit();
+    renderAdminReportPreview();
+    if (document.getElementById("centreView").classList.contains("active")) {
+      openCentre(activeCentreDashboardIndex);
+    }
+  });
+}
+
+function setupExportFilters() {
+  refreshCenterLists();
+  document.getElementById("exportMonth").addEventListener("change", (event) => {
+    syncExportDatesToMonth(event.target.value);
+    renderAdminReportPreview();
+  });
+  ["exportCentre", "exportReportType", "exportFromDate", "exportToDate"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", renderAdminReportPreview);
+  });
+}
+
+function setupExportMenus() {
+  document.querySelectorAll(".export-menu-button").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const dropdown = button.nextElementSibling;
+      document.querySelectorAll(".export-dropdown").forEach((menu) => {
+        if (menu !== dropdown) menu.classList.add("hidden");
+      });
+      dropdown.classList.toggle("hidden");
+    });
+  });
+
+  document.querySelectorAll("[data-export-format]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelectorAll(".export-dropdown").forEach((menu) => menu.classList.add("hidden"));
+      const format = button.dataset.exportFormat;
+      if (format === "pdf") downloadProfessionalReport();
+      if (format === "csv") downloadFilteredCsvReport();
+      if (format === "png") downloadImageReport("png");
+      if (format === "jpg") downloadImageReport("jpg");
+    });
+  });
+
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".export-dropdown").forEach((menu) => menu.classList.add("hidden"));
+  });
+}
+
+function setupAdminControls() {
+  document.getElementById("addProcedureBtn").addEventListener("click", addProcedure);
+  document.getElementById("newProcedureName").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addProcedure();
+  });
+  document.getElementById("addCentreBtn").addEventListener("click", addCenter);
+  document.getElementById("newCentreName").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addCenter();
+  });
+}
+
+function syncExportDatesToMonth(month) {
+  document.getElementById("exportFromDate").value = monthStartDates[month];
+  document.getElementById("exportToDate").value = monthEndDates[month];
+}
+
+function renderAdminReportPreview() {
+  const rows = filteredDailyRows();
+  const forecast = reportForecast(rows);
+  renderAdminTrend(rows);
+  document.getElementById("forecastCard").innerHTML = `
+    <span>Projected Intervention</span>
+    <strong>${forecast.projected}</strong>
+    <small>${forecast.projectedAchievement}% projected achievement against target ${forecast.selectedTarget}. Required run rate: ${forecast.requiredPerDay.toFixed(1)} per remaining day. Use CSV / Excel for raw data, Professional PDF for management presentation.</small>
+  `;
+}
+
+function renderAdminTrend(rows) {
+  const chart = document.getElementById("adminTrendChart");
+  const byDate = rows.reduce((acc, row) => {
+    acc[row.date] = (acc[row.date] || 0) + row.intervention;
+    return acc;
+  }, {});
+  const values = Object.entries(byDate);
+  chart.innerHTML = "";
+  if (!values.length) {
+    chart.innerHTML = `<p>No saved data for this filter.</p>`;
+    return;
+  }
+  const max = Math.max(...values.map(([, value]) => value), 1);
+  values.forEach(([date, value]) => {
+    const bar = document.createElement("div");
+    bar.className = "trend-bar";
+    bar.style.height = `${Math.max(12, (value / max) * 140)}px`;
+    bar.title = `${displayDate(date)}: ${value}`;
+    bar.innerHTML = `<span>${date.slice(-2)}</span>`;
+    chart.appendChild(bar);
+  });
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
+function tableToCsv(title, tableId) {
+  const table = document.getElementById(tableId);
+  const rows = Array.from(table.querySelectorAll("tr"));
+  const csvRows = [[title], []];
+  rows.forEach((row) => {
+    const cells = Array.from(row.children).map((cell) => csvEscape(cell.textContent.trim()));
+    csvRows.push(cells);
+  });
+  return csvRows.map((row) => row.join(",")).join("\n");
+}
+
+function filteredRowsToCsv(rows) {
+  const totals = reportTotals(rows);
+  const header = [
+    "Date",
+    "Centre",
+    "Intervention",
+    "CAG",
+    "General",
+    "KASP",
+    "MEDISEP",
+    "OP",
+    "IP",
+    "New OP",
+    "ECG",
+    "Echo",
+    "TMT"
+  ];
+  const body = rows.map((row) => [
+    displayDate(row.date),
+    row.center,
+    row.intervention,
+    row.cag,
+    row.general,
+    row.kasp,
+    row.medisep,
+    row.op,
+    row.ip,
+    row.newOp,
+    row.ecg,
+    row.echo,
+    row.tmt
+  ]);
+  const totalRow = [
+    "TOTAL",
+    "",
+    totals.intervention,
+    totals.cag,
+    totals.general,
+    totals.kasp,
+    totals.medisep,
+    totals.op,
+    totals.ip,
+    totals.newOp,
+    totals.ecg,
+    totals.echo,
+    totals.tmt
+  ];
+  return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function consolidatedRowsToCsv(rows) {
+  const totals = consolidatedTotals(rows);
+  const totalPercent = totals.target ? Math.round((totals.total / totals.target) * 100) : 0;
+  const header = [
+    "Centre",
+    "Target",
+    "Till Yesterday",
+    "Today",
+    "Total",
+    "%",
+    "CAG Today",
+    "CAG Total",
+    "General",
+    "KASP",
+    "MEDISEP",
+    "OP Total",
+    "IP Total",
+    "New OP Total",
+    "ECG Total",
+    "Echo Total",
+    "TMT Total"
+  ];
+  const body = rows.map((row) => [
+    row.center,
+    row.target,
+    row.tillYesterday,
+    row.today,
+    row.total,
+    row.percent,
+    row.cagToday,
+    row.cagTotal,
+    row.general,
+    row.kasp,
+    row.medisep,
+    row.opTotal,
+    row.ipTotal,
+    row.newOpTotal,
+    row.ecgTotal,
+    row.echoTotal,
+    row.tmtTotal
+  ]);
+  const totalRow = [
+    "TOTAL",
+    totals.target,
+    totals.tillYesterday,
+    totals.today,
+    totals.total,
+    totalPercent,
+    totals.cagToday,
+    totals.cagTotal,
+    totals.general,
+    totals.kasp,
+    totals.medisep,
+    totals.opTotal,
+    totals.ipTotal,
+    totals.newOpTotal,
+    totals.ecgTotal,
+    totals.echoTotal,
+    totals.tmtTotal
+  ];
+  return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function downloadFilteredCsvReport() {
+  const isDaily = selectedReportType() === "daily";
+  const rows = isDaily ? filteredDailyRows() : filteredConsolidatedRows();
+  const range = getExportRange();
+  const forecast = reportForecast(filteredDailyRows());
+  const csv = [
+    `KH ${isDaily ? "Daily Wise Detail" : "Consolidated Summary"} Report`,
+    `Centre,${csvEscape(document.getElementById("exportCentre").selectedOptions[0].textContent)}`,
+    `From,${displayDate(range.fromDate)}`,
+    `To,${displayDate(range.toDate)}`,
+    `Target,${forecast.selectedTarget}`,
+    `Projected Month End,${forecast.projected}`,
+    "",
+    isDaily ? filteredRowsToCsv(rows) : consolidatedRowsToCsv(rows)
+  ].join("\n");
+  downloadBlob(csv, `kh-${isDaily ? "daily" : "consolidated"}-report-${range.fromDate}-to-${range.toDate}.csv`, "text/csv;charset=utf-8");
+  showToast("Filtered CSV downloaded");
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function svgBarChart(rows) {
+  const byDate = rows.reduce((acc, row) => {
+    acc[row.date] = (acc[row.date] || 0) + row.intervention;
+    return acc;
+  }, {});
+  const values = Object.entries(byDate);
+  const width = 760;
+  const height = 250;
+  const pad = 34;
+  const max = Math.max(...values.map(([, value]) => value), 1);
+  const barWidth = values.length ? Math.max(16, (width - pad * 2) / values.length - 8) : 16;
+  const bars = values.map(([date, value], index) => {
+    const x = pad + index * (barWidth + 8);
+    const barHeight = (value / max) * 170;
+    const y = height - pad - barHeight;
+    return `
+      <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="#2563eb"></rect>
+      <text x="${x + barWidth / 2}" y="${height - 10}" text-anchor="middle" font-size="10" fill="#657184">${date.slice(-2)}</text>
+      <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="10" fill="#18212f">${value}</text>
+    `;
+  }).join("");
+  return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Intervention trend chart"><line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#dce3ea"></line>${bars}</svg>`;
+}
+
+function svgPayerChart(totals) {
+  const sum = totals.general + totals.kasp + totals.medisep || 1;
+  const items = [
+    { label: "General", value: totals.general, color: "#2563eb" },
+    { label: "KASP", value: totals.kasp, color: "#0f9f8f" },
+    { label: "MEDISEP", value: totals.medisep, color: "#7c3aed" }
+  ];
+  let y = 22;
+  const bars = items.map((item) => {
+    const width = Math.round((item.value / sum) * 380);
+    const row = `
+      <text x="0" y="${y}" font-size="13" fill="#18212f">${item.label}</text>
+      <rect x="90" y="${y - 13}" width="380" height="16" rx="4" fill="#e8edf3"></rect>
+      <rect x="90" y="${y - 13}" width="${width}" height="16" rx="4" fill="${item.color}"></rect>
+      <text x="485" y="${y}" font-size="13" fill="#18212f">${item.value}</text>
+    `;
+    y += 38;
+    return row;
+  }).join("");
+  return `<svg viewBox="0 0 540 130" role="img" aria-label="Payer split chart">${bars}</svg>`;
+}
+
+function professionalReportHtml(rows) {
+  const range = getExportRange();
+  const isDaily = selectedReportType() === "daily";
+  const dailyRows = filteredDailyRows();
+  const totals = reportTotals(dailyRows);
+  const forecast = reportForecast(dailyRows);
+  const consolidatedRows = filteredConsolidatedRows();
+  const consolidatedTotal = consolidatedTotals(consolidatedRows);
+  const consolidatedPercent = consolidatedTotal.target ? Math.round((consolidatedTotal.total / consolidatedTotal.target) * 100) : 0;
+  const centreName = document.getElementById("exportCentre").selectedOptions[0].textContent;
+  const dailyTableRows = dailyRows.map((row) => `
+    <tr>
+      <td>${displayDate(row.date)}</td>
+      <td>${escapeHtml(row.center)}</td>
+      <td>${row.intervention}</td>
+      <td>${row.cag}</td>
+      <td>${row.general}</td>
+      <td>${row.kasp}</td>
+      <td>${row.medisep}</td>
+      <td>${row.op}</td>
+      <td>${row.ip}</td>
+      <td>${row.newOp}</td>
+      <td>${row.ecg}</td>
+      <td>${row.echo}</td>
+      <td>${row.tmt}</td>
+    </tr>
+  `).join("");
+  const dailyTotalRow = `
+    <tr style="font-weight:700;background:#e9f0f7">
+      <td>Total</td>
+      <td></td>
+      <td>${totals.intervention}</td>
+      <td>${totals.cag}</td>
+      <td>${totals.general}</td>
+      <td>${totals.kasp}</td>
+      <td>${totals.medisep}</td>
+      <td>${totals.op}</td>
+      <td>${totals.ip}</td>
+      <td>${totals.newOp}</td>
+      <td>${totals.ecg}</td>
+      <td>${totals.echo}</td>
+      <td>${totals.tmt}</td>
+    </tr>
+  `;
+  const consolidatedTableRows = consolidatedRows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.center)}</td>
+      <td>${row.target}</td>
+      <td>${row.tillYesterday}</td>
+      <td>${row.today}</td>
+      <td>${row.total}</td>
+      <td>${row.percent}%</td>
+      <td>${row.cagToday}</td>
+      <td>${row.cagTotal}</td>
+      <td>${row.general}</td>
+      <td>${row.kasp}</td>
+      <td>${row.medisep}</td>
+      <td>${row.opTotal}</td>
+      <td>${row.ipTotal}</td>
+    </tr>
+  `).join("");
+  const consolidatedTotalRow = `
+    <tr style="font-weight:700;background:#e9f0f7">
+      <td>Total</td>
+      <td>${consolidatedTotal.target}</td>
+      <td>${consolidatedTotal.tillYesterday}</td>
+      <td>${consolidatedTotal.today}</td>
+      <td>${consolidatedTotal.total}</td>
+      <td>${consolidatedPercent}%</td>
+      <td>${consolidatedTotal.cagToday}</td>
+      <td>${consolidatedTotal.cagTotal}</td>
+      <td>${consolidatedTotal.general}</td>
+      <td>${consolidatedTotal.kasp}</td>
+      <td>${consolidatedTotal.medisep}</td>
+      <td>${consolidatedTotal.opTotal}</td>
+      <td>${consolidatedTotal.ipTotal}</td>
+    </tr>
+  `;
+  const tableSection = isDaily ? `
+    <section>
+      <h2>Daily Wise Detailed Data</h2>
+      <table>
+        <thead><tr><th>Date</th><th>Centre</th><th>Intervention</th><th>CAG</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP</th><th>IP</th><th>New OP</th><th>ECG</th><th>Echo</th><th>TMT</th></tr></thead>
+        <tbody>${dailyTableRows ? `${dailyTableRows}${dailyTotalRow}` : `<tr><td colspan="13">No saved data for selected filters.</td></tr>`}</tbody>
+      </table>
+    </section>
+  ` : `
+    <section>
+      <h2>Consolidated Summary</h2>
+      <table>
+        <thead><tr><th>Centre</th><th>Target</th><th>Till Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><th>IP Total</th></tr></thead>
+        <tbody>${consolidatedTableRows ? `${consolidatedTableRows}${consolidatedTotalRow}` : `<tr><td colspan="13">No saved data for selected filters.</td></tr>`}</tbody>
+      </table>
+    </section>
+  `;
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>KH Operations Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #18212f; margin: 0; background: #f5f7fa; }
+    main { max-width: 1120px; margin: 0 auto; padding: 30px; }
+    header { background: #101927; color: white; padding: 26px; border-radius: 8px; margin-bottom: 18px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 28px; }
+    p { color: #657184; margin-top: 6px; }
+    header p { color: #c8d4e4; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .card, section { background: white; border: 1px solid #dce3ea; border-radius: 8px; padding: 16px; }
+    .card span { display: block; color: #657184; font-size: 12px; text-transform: uppercase; font-weight: 700; }
+    .card strong { display: block; font-size: 26px; margin-top: 8px; }
+    section { margin-bottom: 18px; }
+    table { width: 100%; border-collapse: collapse; background: white; font-size: 12px; }
+    th, td { border: 1px solid #dce3ea; padding: 8px; text-align: right; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+    th { background: #e9f0f7; text-transform: uppercase; font-size: 11px; }
+    .two { display: grid; grid-template-columns: 1.3fr .7fr; gap: 14px; }
+    @media print { body { background: white; } main { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>KH Operations Report</h1>
+      <p>${escapeHtml(centreName)} | ${isDaily ? "Daily Wise Detail" : "Consolidated Summary"} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}</p>
+    </header>
+    <div class="grid">
+      <div class="card"><span>Intervention</span><strong>${totals.intervention}</strong></div>
+      <div class="card"><span>CAG</span><strong>${totals.cag}</strong></div>
+      <div class="card"><span>Achievement</span><strong>${forecast.achievement}%</strong></div>
+      <div class="card"><span>Projected Month End</span><strong>${forecast.projected}</strong></div>
+      <div class="card"><span>Target</span><strong>${forecast.selectedTarget}</strong></div>
+      <div class="card"><span>Projected Achievement</span><strong>${forecast.projectedAchievement}%</strong></div>
+      <div class="card"><span>Required / Remaining Day</span><strong>${forecast.requiredPerDay.toFixed(1)}</strong></div>
+      <div class="card"><span>OP</span><strong>${totals.op}</strong></div>
+    </div>
+    <div class="two">
+      <section>
+        <h2>Intervention Trend</h2>
+        <p>Daily selected interventional procedure count.</p>
+        ${svgBarChart(rows)}
+      </section>
+      <section>
+        <h2>Payer Split</h2>
+        <p>Selected procedures only.</p>
+        ${svgPayerChart(totals)}
+      </section>
+    </div>
+    <section>
+      <h2>Forecast</h2>
+      <p>Average ${forecast.average.toFixed(1)} interventions per saved day across ${forecast.dayCount} saved day${forecast.dayCount === 1 ? "" : "s"}. Projected month-end total is ${forecast.projected} for a ${forecast.lastDay}-day month. Current achievement is ${forecast.achievement}% against target ${forecast.selectedTarget}; projected achievement is ${forecast.projectedAchievement}%. Required run rate is ${forecast.requiredPerDay.toFixed(1)} per remaining day.</p>
+    </section>
+    ${tableSection}
+  </main>
+</body>
+</html>`;
+}
+
+function downloadProfessionalReport() {
+  const rows = filteredDailyRows();
+  const range = getExportRange();
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    downloadBlob(professionalReportHtml(rows), `kh-professional-report-${range.fromDate}-to-${range.toDate}.html`, "text/html;charset=utf-8");
+    showToast("Popup blocked. HTML report downloaded instead.");
+    return;
+  }
+  reportWindow.document.open();
+  reportWindow.document.write(professionalReportHtml(rows));
+  reportWindow.document.close();
+  reportWindow.addEventListener("load", () => {
+    reportWindow.focus();
+    reportWindow.print();
+  });
+  showToast("PDF-ready report opened");
+}
+
+function downloadImageReport(format) {
+  const rows = filteredDailyRows();
+  const totals = reportTotals(rows);
+  const forecast = reportForecast(rows);
+  const range = getExportRange();
+  const centreName = document.getElementById("exportCentre").selectedOptions[0].textContent;
+  const reportTypeLabel = selectedReportType() === "daily" ? "Daily Wise Detail" : "Consolidated Summary";
+  const canvas = document.createElement("canvas");
+  canvas.width = 1400;
+  canvas.height = 1000;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#f5f7fa";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#101927";
+  ctx.fillRect(50, 50, 1300, 150);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 42px Arial";
+  ctx.fillText("KH Operations Report", 90, 115);
+  ctx.font = "400 24px Arial";
+  ctx.fillText(`${centreName} | ${reportTypeLabel} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}`, 90, 160);
+
+  const cards = [
+    ["Intervention", totals.intervention],
+    ["CAG", totals.cag],
+    ["Achievement", `${forecast.achievement}%`],
+    ["Projected", forecast.projected],
+    ["Target", forecast.selectedTarget],
+    ["Required / Day", forecast.requiredPerDay.toFixed(1)]
+  ];
+  cards.forEach(([label, value], index) => {
+    const x = 50 + (index % 3) * 430;
+    const y = 230 + Math.floor(index / 3) * 130;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#dce3ea";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, 400, 100, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#657184";
+    ctx.font = "700 18px Arial";
+    ctx.fillText(label.toUpperCase(), x + 24, y + 34);
+    ctx.fillStyle = "#18212f";
+    ctx.font = "700 38px Arial";
+    ctx.fillText(String(value), x + 24, y + 78);
+  });
+
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#dce3ea";
+  ctx.beginPath();
+  ctx.roundRect(50, 520, 820, 340, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#18212f";
+  ctx.font = "700 24px Arial";
+  ctx.fillText("Intervention Trend", 80, 565);
+
+  const byDate = rows.reduce((acc, row) => {
+    acc[row.date] = (acc[row.date] || 0) + row.intervention;
+    return acc;
+  }, {});
+  const values = Object.entries(byDate);
+  const max = Math.max(...values.map(([, value]) => value), 1);
+  const chartX = 90;
+  const chartY = 810;
+  const barGap = 12;
+  const barWidth = values.length ? Math.min(46, Math.max(18, (730 - values.length * barGap) / values.length)) : 24;
+  values.forEach(([date, value], index) => {
+    const height = (value / max) * 200;
+    const x = chartX + index * (barWidth + barGap);
+    const y = chartY - height;
+    ctx.fillStyle = "#2563eb";
+    ctx.fillRect(x, y, barWidth, height);
+    ctx.fillStyle = "#657184";
+    ctx.font = "14px Arial";
+    ctx.fillText(date.slice(-2), x + 4, chartY + 24);
+    ctx.fillStyle = "#18212f";
+    ctx.fillText(String(value), x + 2, y - 8);
+  });
+
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#dce3ea";
+  ctx.beginPath();
+  ctx.roundRect(910, 520, 440, 340, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#18212f";
+  ctx.font = "700 24px Arial";
+  ctx.fillText("Payer Split", 940, 565);
+  const payerItems = [
+    ["General", totals.general, "#2563eb"],
+    ["KASP", totals.kasp, "#0f9f8f"],
+    ["MEDISEP", totals.medisep, "#7c3aed"]
+  ];
+  const payerSum = totals.general + totals.kasp + totals.medisep || 1;
+  payerItems.forEach(([label, value, color], index) => {
+    const y = 620 + index * 70;
+    ctx.fillStyle = "#18212f";
+    ctx.font = "700 18px Arial";
+    ctx.fillText(label, 940, y);
+    ctx.fillStyle = "#e8edf3";
+    ctx.fillRect(1040, y - 18, 230, 22);
+    ctx.fillStyle = color;
+    ctx.fillRect(1040, y - 18, Math.round((value / payerSum) * 230), 22);
+    ctx.fillStyle = "#18212f";
+    ctx.fillText(String(value), 1290, y);
+  });
+
+  ctx.fillStyle = "#657184";
+  ctx.font = "18px Arial";
+  ctx.fillText(`Generated from filtered report data. Average interventions/day: ${forecast.average.toFixed(1)}. Projected achievement: ${forecast.projectedAchievement}%.`, 50, 940);
+
+  const mime = format === "jpg" ? "image/jpeg" : "image/png";
+  const extension = format === "jpg" ? "jpg" : "png";
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL(mime, 0.92);
+  link.download = `kh-report-${range.fromDate}-to-${range.toDate}.${extension}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast(`${extension.toUpperCase()} report downloaded`);
+}
+
+function downloadSelectedMonthReport() {
+  refreshCenterRollups(reportDate);
+  renderConsolidated();
+  const month = selectedMonthLabel();
+  const csv = [
+    `KH Operations Report - ${month}`,
+    `Report Till,${displayDate(reportDate)}`,
+    "",
+    tableToCsv("Procedure Consolidated", "consolidatedTable"),
+    "",
+    tableToCsv("OP & Diagnostics Consolidated", "opsConsolidatedTable")
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `kh-operations-${document.getElementById("monthSelect").value}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast(`${month} report downloaded`);
+}
+
+function login() {
+  const password = document.getElementById("loginPassword").value;
+  const error = document.getElementById("loginError");
+  const centreIndex = Number(document.getElementById("loginCentre").value);
+
+  if (loginType === "admin") {
+    if (password !== "admin123") {
+      error.textContent = "Invalid admin password.";
+      return;
+    }
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("appShell").classList.remove("hidden");
+    setRole("admin");
+    return;
+  }
+
+  if (password !== centers[centreIndex].password) {
+    error.textContent = "Invalid centre password.";
+    return;
+  }
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("appShell").classList.remove("hidden");
+  setRole("centre", centreIndex);
+}
+
+function logout() {
+  document.getElementById("appShell").classList.add("hidden");
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("loginPassword").value = "";
+  document.getElementById("loginError").textContent = "";
+}
+
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 1800);
+}
+
+async function init() {
+  const loadedState = await setupPersistence();
+  if (!loadedState) {
+    seedInitialEntries();
+    persistSoon();
+  } else {
+    refreshCenterRollups(reportDate);
+  }
+  setupLogin();
+  setupNavigation();
+  setupEntryDate();
+  setupMonthSelect();
+  setupExportFilters();
+  setupExportMenus();
+  setupAdminControls();
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderAdminReportPreview();
+  renderEntryForCurrentDate();
+  renderTargets();
+  renderUsers();
+  renderProcedures();
+  document.getElementById("saveBtn").addEventListener("click", updateFromDailyEntry);
+}
+
+init();

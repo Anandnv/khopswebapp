@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KH Operations Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen">
+      <div class="login-panel">
+        <div class="brand login-brand">
+          <div class="brand-mark">KH</div>
+          <div>
+            <strong>Karunya Hrudayalaya</strong>
+            <span>Secure centre login</span>
+          </div>
+        </div>
+        <div class="login-tabs">
+          <button class="login-tab active" data-login-type="centre">Centre</button>
+          <button class="login-tab" data-login-type="admin">Admin</button>
+        </div>
+        <label class="login-field centre-login-field">
+          <span>Select Centre</span>
+          <select id="loginCentre"></select>
+        </label>
+        <label class="login-field">
+          <span>Password</span>
+          <input id="loginPassword" type="password" placeholder="Enter password" />
+        </label>
+        <p class="login-error" id="loginError"></p>
+        <button class="button primary login-button" id="loginBtn">Login</button>
+        <small class="login-hint">Prototype passwords: centres start with 1234, admin uses admin123. Admin can change centre passwords.</small>
+      </div>
+    </section>
+
+    <div class="app-shell hidden" id="appShell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">KH</div>
+          <div>
+            <strong>KH Operations</strong>
+            <span>Centre Management</span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active admin-only" data-view="admin">
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item centre-only" data-view="admin">
+            <span>Consolidated</span>
+          </button>
+          <button class="nav-item centre-only" data-view="entry">
+            <span>Daily Entry</span>
+          </button>
+          <button class="nav-item admin-only" data-view="targets">
+            <span>Targets</span>
+          </button>
+          <button class="nav-item admin-only" data-view="procedures">
+            <span>Procedures</span>
+          </button>
+          <button class="nav-item admin-only" data-view="users">
+            <span>Centres & Users</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-card">
+          <span class="eyebrow">Signed in as</span>
+          <strong id="signedInName">Admin User</strong>
+          <small id="signedInAccess">Full centre access, view only</small>
+          <div class="role-switch">
+            <button class="role-chip" id="logoutBtn">Logout</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Kerala hospital cathlab network</span>
+            <h1 id="pageTitle">Consolidated Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <select id="monthSelect" aria-label="Select month">
+              <option value="2026-04">April 2026</option>
+              <option value="2026-03">March 2026</option>
+              <option value="2026-02">February 2026</option>
+            </select>
+            <div class="export-menu">
+              <button class="button secondary export-menu-button" type="button">Export Report</button>
+              <div class="export-dropdown hidden">
+                <button type="button" data-export-format="pdf">PDF</button>
+                <button type="button" data-export-format="csv">CSV / Excel</button>
+                <button type="button" data-export-format="png">PNG</button>
+                <button type="button" data-export-format="jpg">JPG</button>
+              </div>
+            </div>
+            <button class="button primary" id="saveBtn">Save</button>
+          </div>
+        </header>
+
+        <section id="adminView" class="view active">
+          <div class="metric-grid">
+            <article class="metric-card">
+              <span>Intervention Total</span>
+              <strong id="summaryIntervention">0</strong>
+              <small>Selected procedures only</small>
+            </article>
+            <article class="metric-card">
+              <span>CAG Total</span>
+              <strong id="summaryCag">0</strong>
+              <small>All payers combined</small>
+            </article>
+            <article class="metric-card">
+              <span>Network Target</span>
+              <strong id="summaryTarget">0</strong>
+              <small>Admin assigned monthly</small>
+            </article>
+            <article class="metric-card">
+              <span>Achievement</span>
+              <strong id="summaryPercent">0%</strong>
+              <small>Till 20-04-2026</small>
+            </article>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Report Download</h2>
+                <p>Filter by centre, month, or date range before downloading management reports.</p>
+              </div>
+              <div class="report-actions">
+                <div class="export-menu">
+                  <button class="button primary export-menu-button" type="button">Export Report</button>
+                  <div class="export-dropdown hidden">
+                    <button type="button" data-export-format="pdf">PDF</button>
+                    <button type="button" data-export-format="csv">CSV / Excel</button>
+                    <button type="button" data-export-format="png">PNG</button>
+                    <button type="button" data-export-format="jpg">JPG</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="filter-grid">
+              <label>
+                <span>Centre</span>
+                <select id="exportCentre"></select>
+              </label>
+              <label>
+                <span>Report Type</span>
+                <select id="exportReportType">
+                  <option value="consolidated">Consolidated Summary</option>
+                  <option value="daily">Daily Wise Detail</option>
+                </select>
+              </label>
+              <label>
+                <span>Month</span>
+                <select id="exportMonth">
+                  <option value="2026-04">April 2026</option>
+                  <option value="2026-03">March 2026</option>
+                  <option value="2026-02">February 2026</option>
+                </select>
+              </label>
+              <label>
+                <span>From Date</span>
+                <input id="exportFromDate" type="date" value="2026-04-01" />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input id="exportToDate" type="date" value="2026-04-20" />
+              </label>
+            </div>
+            <div class="report-preview-grid">
+              <div class="mini-chart">
+                <div class="panel-head"><h2>Filtered Trend</h2></div>
+                <div class="trend-chart small" id="adminTrendChart"></div>
+              </div>
+              <div class="forecast-card" id="forecastCard"></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="procedureReportTitle">KH - Procedures Till 20-04-2026</h2>
+                <p>Click any centre to open detailed analytics.</p>
+              </div>
+              <div class="legend">
+                <span><i class="good"></i>80% to 100%</span>
+                <span><i class="watch"></i>40% to 79%</span>
+                <span><i class="risk"></i>Less than 40%</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="consolidatedTable">
+                <thead>
+                  <tr>
+                    <th>Centre</th>
+                    <th>Till Yesterday</th>
+                    <th>Today</th>
+                    <th>Total</th>
+                    <th>Target</th>
+                    <th>CAG</th>
+                    <th>CAG Total</th>
+                    <th>KASP</th>
+                    <th>General</th>
+                    <th>Medisep</th>
+                    <th>%</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot></tfoot>
+              </table>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="opsReportTitle">OP & Diagnostics Till 20-04-2026</h2>
+                <p>These values also update from each centre's daily entry.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compact" id="opsConsolidatedTable">
+                <thead>
+                  <tr>
+                    <th>Centre</th>
+                    <th>OP Till Yesterday</th>
+                    <th>OP Today</th>
+                    <th>OP Total</th>
+                    <th>IP Till Yesterday</th>
+                    <th>IP Today</th>
+                    <th>IP Total</th>
+                    <th>New OP Till Yesterday</th>
+                    <th>New OP Today</th>
+                    <th>New OP Total</th>
+                    <th>ECG Till Yesterday</th>
+                    <th>ECG Today</th>
+                    <th>ECG Total</th>
+                    <th>Echo Till Yesterday</th>
+                    <th>Echo Today</th>
+                    <th>Echo Total</th>
+                    <th>TMT Till Yesterday</th>
+                    <th>TMT Today</th>
+                    <th>TMT Total</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Centre Achievement</h2>
+              </div>
+              <div class="bar-list" id="achievementBars"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>Payer Split</h2>
+              </div>
+              <div class="donut-row">
+                <div class="donut" id="payerDonut"></div>
+                <div class="split-list" id="payerSplit"></div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section id="centreView" class="view">
+          <button class="text-button" id="backToAdmin">Back to consolidated</button>
+          <div class="centre-hero">
+            <div>
+              <span class="eyebrow">Centre dashboard</span>
+              <h2 id="centreName">Tirur</h2>
+              <p>Today, till yesterday, total procedure movement, OP diagnostics, and payer analytics.</p>
+            </div>
+            <div class="hero-stats">
+              <div><span>Target</span><strong id="centreTarget">0</strong></div>
+              <div><span>Total</span><strong id="centreTotal">0</strong></div>
+              <div><span>Achievement</span><strong id="centrePercent">0%</strong></div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel">
+              <div class="panel-head"><h2>Daily Trend</h2></div>
+              <div class="trend-chart" id="trendChart"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><h2>Today Snapshot</h2></div>
+              <div class="snapshot-grid" id="snapshotGrid"></div>
+            </section>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Procedure Details</h2>
+                <p>Till yesterday is calculated automatically from previous entries.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compact" id="centreProcedureTable">
+                <thead>
+                  <tr class="group-row">
+                    <th rowspan="2">Procedure</th>
+                    <th colspan="3">General</th>
+                    <th colspan="3">KASP</th>
+                    <th colspan="3">MEDISEP</th>
+                    <th colspan="3">Total</th>
+                  </tr>
+                  <tr>
+                    <th>General Till Yesterday</th>
+                    <th>General Today</th>
+                    <th>General Total</th>
+                    <th>KASP Till Yesterday</th>
+                    <th>KASP Today</th>
+                    <th>KASP Total</th>
+                    <th>MEDISEP Till Yesterday</th>
+                    <th>MEDISEP Today</th>
+                    <th>MEDISEP Total</th>
+                    <th>Total Till Yesterday</th>
+                    <th>Total Today</th>
+                    <th>Grand Total</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="entryView" class="view">
+          <div class="access-banner">
+            <strong id="entryCentreName">Tirur Centre Login</strong>
+            <span id="entryAccessMessage">This user can enter only Tirur data. Other centres are not selectable.</span>
+          </div>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Daily Centre Entry</h2>
+                <p>Centre staff enter current day values only. Till yesterday and totals are calculated by the app.</p>
+              </div>
+              <div class="form-actions">
+                <div class="locked-centre">
+                  <span>Centre</span>
+                  <strong id="lockedCentreName">Tirur</strong>
+                </div>
+                <input id="entryDate" type="date" value="2026-04-20" aria-label="Entry date" />
+              </div>
+            </div>
+
+            <div class="entry-grid">
+              <div>
+                <h3>OP Details</h3>
+                <div class="entry-list" id="opEntry"></div>
+              </div>
+              <div>
+                <h3>Patient Referrals</h3>
+                <div class="entry-list" id="referralEntry"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h2>Procedure Entry</h2>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table compact entry-table" id="procedureEntryTable">
+                <thead>
+                  <tr class="group-row">
+                    <th rowspan="2">Procedure</th>
+                    <th colspan="3">General</th>
+                    <th colspan="3">KASP</th>
+                    <th colspan="3">MEDISEP</th>
+                    <th colspan="3">Total</th>
+                  </tr>
+                  <tr>
+                    <th>General Till Yesterday</th>
+                    <th>General Today</th>
+                    <th>General Total</th>
+                    <th>KASP Till Yesterday</th>
+                    <th>KASP Today</th>
+                    <th>KASP Total</th>
+                    <th>MEDISEP Till Yesterday</th>
+                    <th>MEDISEP Today</th>
+                    <th>MEDISEP Total</th>
+                    <th>Total Till Yesterday</th>
+                    <th>Total Today</th>
+                    <th>Grand Total</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="targetsView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Monthly Targets</h2>
+                <p>Admin sets intervention target manually for each centre.</p>
+              </div>
+            </div>
+            <div class="target-grid" id="targetGrid"></div>
+          </section>
+        </section>
+
+        <section id="proceduresView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Procedure Settings</h2>
+                <p>Admin can decide which procedures are included in consolidated interventional counts.</p>
+              </div>
+              <div class="form-actions">
+                <input id="newProcedureName" type="text" placeholder="New procedure name" />
+                <button class="button primary" id="addProcedureBtn">Add Procedure</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="procedureSettingsTable">
+                <thead>
+                  <tr>
+                    <th>Procedure</th>
+                    <th>Count In Total</th>
+                    <th>CAG</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="usersView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Centres & User Controls</h2>
+                <p>Admin can add/remove centres and update their login username and password.</p>
+              </div>
+              <div class="form-actions">
+                <input id="newCentreName" type="text" placeholder="Centre name" />
+                <button class="button primary" id="addCentreBtn">Add Centre</button>
+              </div>
+            </div>
+            <div class="user-list" id="userList"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast">Saved prototype data</div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
