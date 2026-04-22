@@ -643,29 +643,33 @@ function getSelectedEntryDate() {
 
 function renderConsolidated() {
   refreshCenterRollups(reportDate);
+
   document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
   document.querySelector("#summaryPercent").nextElementSibling.textContent = `Till ${displayDate(reportDate)}`;
+
   const centerIndexes = centers.map((_, index) => index);
   const tbody = document.querySelector("#consolidatedTable tbody");
   const tfoot = document.querySelector("#consolidatedTable tfoot");
   tbody.innerHTML = "";
-  const reportDownloadPanel = document.querySelector("#adminView > .panel");
-  const procedurePanel = document.getElementById("consolidatedTable").closest(".panel");
-  const opsPanel = document.getElementById("opsConsolidatedTable").closest(".panel");
-  const dashboardGrid = document.querySelector("#adminView > .dashboard-grid");
-  const metricGrid = document.querySelector("#adminView > .metric-grid");
-  reportDownloadPanel.classList.toggle("hidden", false);
-  procedurePanel.classList.toggle("hidden", false);
-  opsPanel.classList.toggle("hidden", currentRole === "centre");
-  dashboardGrid.classList.toggle("hidden", currentRole === "centre");
-  metricGrid.classList.toggle("hidden", currentRole === "centre");
 
   centerIndexes.forEach((index) => {
     const center = centers[index];
     const percent = percentFor(center);
+
+    // 🔴 NEW: Check if entry exists today
+    const hasEntry = entries[index] && entries[index][reportDate];
+
+    const statusBadge = hasEntry
+      ? `<span style="color:green;font-weight:700">✔ Updated</span>`
+      : `<span style="color:red;font-weight:700">❌ Missing</span>`;
+
     const row = document.createElement("tr");
+
     row.innerHTML = `
-      <td>${center.name}</td>
+      <td>
+        ${center.name}<br/>
+        <small>${statusBadge}</small>
+      </td>
       <td>${center.tillDate}</td>
       <td>${center.yesterday}</td>
       <td class="${statusClass(percent)}">${totalFor(center)}</td>
@@ -677,6 +681,7 @@ function renderConsolidated() {
       <td>${center.medisep}</td>
       <td>${percent}</td>
     `;
+
     row.addEventListener("click", () => {
       if (currentRole === "centre" && index !== loggedInCentreIndex) {
         showToast("You can open only your own centre details");
@@ -684,12 +689,13 @@ function renderConsolidated() {
       }
       openCentre(index);
     });
+
     tbody.appendChild(row);
   });
 
   const totals = centerIndexes.reduce(
-    (acc, center) => {
-      center = centers[center];
+    (acc, idx) => {
+      const center = centers[idx];
       acc.tillDate += center.tillDate;
       acc.yesterday += center.yesterday;
       acc.target += center.target;
@@ -702,6 +708,7 @@ function renderConsolidated() {
     },
     { tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 }
   );
+
   const grandTotal = totals.tillDate + totals.yesterday;
   const percent = totals.target ? Math.round((grandTotal / totals.target) * 100) : 0;
 
@@ -725,6 +732,7 @@ function renderConsolidated() {
   document.getElementById("summaryCag").textContent = totals.cagTotal;
   document.getElementById("summaryTarget").textContent = totals.target;
   document.getElementById("summaryPercent").textContent = `${percent}%`;
+
   renderOpsConsolidated();
 }
 
