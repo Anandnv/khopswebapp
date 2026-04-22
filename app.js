@@ -11,7 +11,9 @@ let centers = [
 let currentRole = "admin";
 let loggedInCentreIndex = 0;
 let loginType = "centre";
-let reportDate = "2026-04-20";
+let reportDate = new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Asia/Kolkata'
+});
 let activeCentreDashboardIndex = 0;
 const entries = {};
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
