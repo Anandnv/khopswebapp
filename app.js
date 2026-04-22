@@ -122,8 +122,15 @@ function applyAppState(state) {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
   }
-  if (state.reportDate) setReportDate(state.reportDate);
-  return true;
+  const today = new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Asia/Kolkata'
+});
+
+if (state.reportDate === today) {
+  setReportDate(state.reportDate);
+} else {
+  setReportDate(today);
+}
 }
 
 async function setupPersistence() {
@@ -633,10 +640,19 @@ function currencySafeNumber(value) {
 
 function setReportDate(date) {
   reportDate = date;
-  // Keep monthSelect aligned so they never drift apart
+
+  // Sync month selector
   const month = date.slice(0, 7);
   const monthSelect = document.getElementById("monthSelect");
-  if (monthSelect && monthSelect.value !== month) monthSelect.value = month;
+  if (monthSelect && monthSelect.value !== month) {
+    monthSelect.value = month;
+  }
+
+  // ✅ FIX: Sync entry date input
+  const entryDateInput = document.getElementById("entryDate");
+  if (entryDateInput) {
+    entryDateInput.value = date;
+  }
 }
 
 function getSelectedEntryDate() {
@@ -2146,6 +2162,7 @@ async function init() {
   setupExportMenus();
   setupAdminControls();
   renderConsolidated();
+  setReportDate(reportDate);
   renderBars();
   renderPayerSplit();
   renderAdminReportPreview();
