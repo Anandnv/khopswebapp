@@ -120,6 +120,17 @@ select {
   margin: 0 0 8px;
 }
 
+.login-lockout {
+  background: #fff4e0;
+  border: 1px solid #f5c842;
+  color: #7a5500;
+  border-radius: 7px;
+  padding: 10px 12px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 8px 0 0;
+}
+
 .login-hint {
   display: block;
   color: var(--muted);

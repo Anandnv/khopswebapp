@@ -30,6 +30,79 @@ const monthStartDates = {
   "2026-02": "2026-02-01"
 };
 
+// ─── Security helpers ────────────────────────────────────────────────────────
+
+const SESSION_KEY = "kh-session-v1";
+const LOCKOUT_KEY = "kh-lockout-v1";
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 30_000; // 30 seconds
+
+/** SHA-256 a plaintext string → lowercase hex digest */
+async function sha256(text) {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(text)
+  );
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/** Read or create the rate-limit bucket stored in sessionStorage */
+function getLockout() {
+  try {
+    return JSON.parse(sessionStorage.getItem(LOCKOUT_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveLockout(data) {
+  sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(data));
+}
+
+/** Returns seconds remaining in lockout, or 0 if not locked */
+function lockoutSecondsLeft() {
+  const { until = 0 } = getLockout();
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+function recordFailedAttempt() {
+  const lock = getLockout();
+  lock.attempts = (lock.attempts || 0) + 1;
+  if (lock.attempts >= MAX_ATTEMPTS) {
+    lock.until = Date.now() + LOCKOUT_MS;
+    lock.attempts = 0; // reset counter after locking
+  }
+  saveLockout(lock);
+}
+
+function resetAttempts() {
+  saveLockout({});
+}
+
+/** Persist a lightweight session token (role + centreIndex) in sessionStorage */
+function saveSession(role, centreIndex) {
+  sessionStorage.setItem(
+    SESSION_KEY,
+    JSON.stringify({ role, centreIndex, ts: Date.now() })
+  );
+}
+
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+function loadSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+// ─── App state ───────────────────────────────────────────────────────────────
+
 function getAppState() {
   return {
     centers,
@@ -972,21 +1045,38 @@ function renderUsers() {
     <div class="user-card">
       <div>
         <strong>${center.name}</strong>
-        <span>Username and password for centre login</span>
+        <span>Username and new password for centre login</span>
       </div>
-      <input type="text" value="${center.username}" aria-label="${center.name} username" data-user-field="username" data-center-index="${index}" />
-      <input type="text" value="${center.password}" aria-label="${center.name} password" data-user-field="password" data-center-index="${index}" />
+      <input type="text" value="${escapeHtml(center.username)}" aria-label="${center.name} username" data-user-field="username" data-center-index="${index}" />
+      <input type="password" placeholder="New password" aria-label="${center.name} new password" data-user-field="password" data-center-index="${index}" />
       <button class="button secondary" data-remove-center="${index}">Remove</button>
     </div>
   `).join("");
-  list.querySelectorAll("input").forEach((input) => {
+
+  // Username change — plaintext, just update directly
+  list.querySelectorAll("input[data-user-field='username']").forEach((input) => {
     input.addEventListener("change", () => {
-      centers[Number(input.dataset.centerIndex)][input.dataset.userField] = input.value.trim() || input.value;
+      centers[Number(input.dataset.centerIndex)].username = input.value.trim() || input.value;
       refreshCenterLists();
       persistSoon();
-      showToast("Centre login updated");
+      showToast("Username updated");
     });
   });
+
+  // Password change — hash before storing, remove legacy plaintext field
+  list.querySelectorAll("input[data-user-field='password']").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const raw = input.value.trim();
+      if (!raw) return;
+      const idx = Number(input.dataset.centerIndex);
+      centers[idx].passwordHash = await sha256(raw);
+      delete centers[idx].password; // remove legacy plaintext
+      input.value = "";
+      persistSoon();
+      showToast("Password updated and secured");
+    });
+  });
+
   list.querySelectorAll("[data-remove-center]").forEach((button) => {
     button.addEventListener("click", () => removeCenter(Number(button.dataset.removeCenter)));
   });
@@ -1158,6 +1248,22 @@ function setupLogin() {
   const centreSelect = document.getElementById("loginCentre");
   centreSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
 
+  // Live lockout countdown
+  setInterval(() => {
+    const secs = lockoutSecondsLeft();
+    const el = document.getElementById("loginLockout");
+    const btn = document.getElementById("loginBtn");
+    if (!el) return;
+    if (secs > 0) {
+      el.textContent = `Login locked — too many failed attempts. Try again in ${secs}s.`;
+      el.classList.remove("hidden");
+      btn.disabled = true;
+    } else {
+      el.classList.add("hidden");
+      btn.disabled = false;
+    }
+  }, 500);
+
   document.querySelectorAll(".login-tab").forEach((tab) => {
     tab.addEventListener("click", () => {
       loginType = tab.dataset.loginType;
@@ -1168,7 +1274,7 @@ function setupLogin() {
     });
   });
 
-  document.getElementById("loginBtn").addEventListener("click", login);
+  document.getElementById("loginBtn").addEventListener("click", () => login());
   document.getElementById("loginPassword").addEventListener("keydown", (event) => {
     if (event.key === "Enter") login();
   });
@@ -1820,32 +1926,65 @@ function downloadSelectedMonthReport() {
   showToast(`${month} report downloaded`);
 }
 
-function login() {
-  const password = document.getElementById("loginPassword").value;
+async function login() {
   const error = document.getElementById("loginError");
+
+  // Brute-force check
+  const wait = lockoutSecondsLeft();
+  if (wait > 0) {
+    error.textContent = `Too many failed attempts. Try again in ${wait}s.`;
+    return;
+  }
+
+  const passwordRaw = document.getElementById("loginPassword").value;
+  if (!passwordRaw) {
+    error.textContent = "Please enter a password.";
+    return;
+  }
+  const passwordHash = await sha256(passwordRaw);
   const centreIndex = Number(document.getElementById("loginCentre").value);
+  error.textContent = "";
 
   if (loginType === "admin") {
-    if (password !== "admin123") {
-      error.textContent = "Invalid admin password.";
+    // Admin hash lives in CONFIG so it's never in app.js source
+    const adminHash = CONFIG.adminPasswordHash || await sha256("admin123");
+    if (passwordHash !== adminHash) {
+      recordFailedAttempt();
+      const remaining = lockoutSecondsLeft();
+      error.textContent = remaining > 0
+        ? `Too many failed attempts. Locked for ${remaining}s.`
+        : "Invalid admin password.";
       return;
     }
+    resetAttempts();
+    saveSession("admin", -1);
     document.getElementById("loginScreen").classList.add("hidden");
     document.getElementById("appShell").classList.remove("hidden");
     setRole("admin");
     return;
   }
 
-  if (password !== centers[centreIndex].password) {
-    error.textContent = "Invalid centre password.";
+  // Centre login — compare against stored hash (falls back gracefully if
+  // the password field still holds a plaintext legacy value during migration)
+  const centre = centers[centreIndex];
+  const storedCredential = centre.passwordHash || await sha256(centre.password || "");
+  if (passwordHash !== storedCredential) {
+    recordFailedAttempt();
+    const remaining = lockoutSecondsLeft();
+    error.textContent = remaining > 0
+      ? `Too many failed attempts. Locked for ${remaining}s.`
+      : "Invalid centre password.";
     return;
   }
+  resetAttempts();
+  saveSession("centre", centreIndex);
   document.getElementById("loginScreen").classList.add("hidden");
   document.getElementById("appShell").classList.remove("hidden");
   setRole("centre", centreIndex);
 }
 
 function logout() {
+  clearSession();
   document.getElementById("appShell").classList.add("hidden");
   document.getElementById("loginScreen").classList.remove("hidden");
   document.getElementById("loginPassword").value = "";
@@ -1859,11 +1998,20 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
+async function migrateLegacyPasswords() {
+  let changed = false;
+  for (const center of centers) {
+    if (center.password && !center.passwordHash) {
+      center.passwordHash = await sha256(center.password);
+      delete center.password;
+      changed = true;
+    }
+  }
+  if (changed) persistSoon();
+}
+
 async function init() {
   const loadedState = await setupPersistence();
-  // Only seed when there is genuinely no persisted data at all.
-  // Check entries object is empty so a Supabase failure that returns
-  // loadedState=false never overwrites real localStorage data.
   const hasAnyEntries = Object.keys(entries).some(
     (k) => Object.keys(entries[k] || {}).length > 0
   );
@@ -1873,6 +2021,10 @@ async function init() {
   } else {
     refreshCenterRollups(reportDate);
   }
+
+  // Hash any legacy plaintext passwords silently on first run
+  await migrateLegacyPasswords();
+
   setupLogin();
   setupNavigation();
   setupEntryDate();
@@ -1889,6 +2041,20 @@ async function init() {
   renderUsers();
   renderProcedures();
   document.getElementById("saveBtn").addEventListener("click", updateFromDailyEntry);
+
+  // Restore session if the tab is still open (sessionStorage survives refresh)
+  const session = loadSession();
+  if (session) {
+    if (session.role === "admin") {
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+      setRole("admin");
+    } else if (session.role === "centre" && centers[session.centreIndex]) {
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+      setRole("centre", session.centreIndex);
+    }
+  }
 }
 
 init();
