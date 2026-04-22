@@ -161,14 +161,36 @@ function persistSoon() {
 
 async function saveAppState() {
   const state = getAppState();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  if (!supabaseClient) return;
-  const { error } = await supabaseClient
-    .from("app_state")
-    .upsert({ id: "main", state, updated_at: new Date().toISOString() });
-  if (error) console.warn("Supabase save failed", error);
-}
 
+  // Always save locally as backup
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+
+  if (!supabaseClient) {
+    showToast("Saved locally (offline mode)");
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from("app_state")
+      .upsert({
+        id: "main",
+        state,
+        updated_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error("Supabase save failed:", error);
+      showToast("❌ Save failed (server error)");
+      return;
+    }
+
+    showToast("✅ Data saved successfully");
+  } catch (err) {
+    console.error("Unexpected save error:", err);
+    showToast("❌ Save failed (network issue)");
+  }
+}
 let procedureSettings = [
   { name: "CAG", counted: false, isCag: true, active: true },
   { name: "PTCA", counted: true, isCag: false, active: true },
