@@ -980,3 +980,198 @@ select:focus, input:focus {
   .topbar-actions { width: 100%; justify-content: flex-end; }
   .filter-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ─── Lock banners ───────────────────────────────────────────────────────── */
+.lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: .875rem;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.lock-banner.locked {
+  background: #fff3cd;
+  border: 1px solid #f5c842;
+  color: #7a5500;
+}
+
+.lock-banner.unlocked {
+  background: var(--green-light);
+  border: 1px solid #a8d5b0;
+  color: #1b5e2e;
+}
+
+.lock-banner.future {
+  background: var(--red-light);
+  border: 1px solid #f5c6cb;
+  color: #721c24;
+}
+
+.lock-banner span { color: inherit; opacity: .8; }
+
+/* ─── Entry meta (last updated) ─────────────────────────────────────────── */
+.entry-meta {
+  color: var(--muted);
+  font-size: .78rem;
+  margin: -8px 0 12px;
+  font-style: italic;
+}
+
+/* ─── Locked value cell ──────────────────────────────────────────────────── */
+.locked-value {
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: #f0f2f5;
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: .85rem;
+  border: 1px dashed var(--line);
+}
+
+/* ─── Nav badge ──────────────────────────────────────────────────────────── */
+.nav-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #fff;
+  font-size: .65rem;
+  font-weight: 800;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ─── Unlock request cards ───────────────────────────────────────────────── */
+.unlock-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: #fafcff;
+}
+
+.unlock-card.approved { border-left: 4px solid var(--green); }
+.unlock-card.rejected { border-left: 4px solid var(--red); }
+.unlock-card.pending  { border-left: 4px solid var(--yellow); }
+
+.unlock-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.unlock-card-head strong { display: block; font-size: .95rem; }
+.unlock-card-head span   { color: var(--muted); font-size: .8rem; }
+
+.unlock-badge {
+  font-size: .7rem;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.unlock-badge.pending  { background: #fff3cd; color: #7a5500; }
+.unlock-badge.approved { background: var(--green-light); color: #1b5e2e; }
+.unlock-badge.rejected { background: var(--red-light); color: #721c24; }
+
+.unlock-reason {
+  color: var(--ink);
+  font-size: .875rem;
+  margin: 6px 0 10px;
+  font-style: italic;
+}
+
+.unlock-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.unlock-actions { display: flex; gap: 8px; }
+
+/* ─── Modal ──────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 500;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.modal {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px;
+  width: min(480px, 100%);
+}
+
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.modal-close {
+  border: 0;
+  background: transparent;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .15s;
+}
+
+.modal-close:hover { background: #eef3f8; color: var(--ink); }
+
+.modal p { color: var(--muted); margin-bottom: 16px; font-size: .9rem; }
+.modal p strong { color: var(--ink); }
+
+.modal-field { display: grid; gap: 6px; margin-bottom: 18px; }
+
+.modal-field span {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.modal-field textarea {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: .9rem;
+  resize: vertical;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.modal-field textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }

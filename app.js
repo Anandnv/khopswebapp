@@ -16,6 +16,10 @@ let reportDate = new Date().toLocaleDateString('en-CA', {
 });
 let activeCentreDashboardIndex = 0;
 const entries = {};
+// entryMeta[centreIndex][date] = { savedAt: ISO string, savedBy: centreName }
+const entryMeta = {};
+// unlockRequests: array of { id, centreIndex, centreName, date, reason, status, requestedAt, resolvedAt }
+let unlockRequests = [];
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -106,13 +110,67 @@ function loadSession() {
   }
 }
 
-// ─── App state ───────────────────────────────────────────────────────────────
+// ─── Date lock helpers ───────────────────────────────────────────────────────
+
+function todayIST() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+/** Returns true if the date is in the past (not today) for the current centre */
+function isDateLocked(date, centreIndex) {
+  if (date > todayIST()) return false; // future — blocked elsewhere
+  if (date === todayIST()) return false; // today — always editable
+  // Past date: editable only if an approved unlock exists for this centre+date
+  return !getApprovedUnlock(centreIndex, date);
+}
+
+/** Returns the approved unlock request for a centre+date, or null */
+function getApprovedUnlock(centreIndex, date) {
+  return unlockRequests.find(
+    (r) => r.centreIndex === centreIndex && r.date === date && r.status === "approved"
+  ) || null;
+}
+
+/** Returns a pending request for this centre+date, or null */
+function getPendingUnlock(centreIndex, date) {
+  return unlockRequests.find(
+    (r) => r.centreIndex === centreIndex && r.date === date && r.status === "pending"
+  ) || null;
+}
+
+// ─── Entry metadata helpers ──────────────────────────────────────────────────
+
+function setEntryMeta(centreIndex, date, centreName) {
+  if (!entryMeta[centreIndex]) entryMeta[centreIndex] = {};
+  entryMeta[centreIndex][date] = {
+    savedAt: new Date().toISOString(),
+    savedBy: centreName
+  };
+}
+
+function getEntryMeta(centreIndex, date) {
+  return entryMeta[centreIndex]?.[date] || null;
+}
+
+function formatSavedAt(isoString) {
+  if (!isoString) return "";
+  const d = new Date(isoString);
+  return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true
+  });
+}
+
+
 
 function getAppState() {
   return {
     centers,
     procedureSettings,
     entries,
+    entryMeta,
+    unlockRequests,
     reportDate
   };
 }
@@ -125,6 +183,11 @@ function applyAppState(state) {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
   }
+  if (state.entryMeta && typeof state.entryMeta === "object") {
+    Object.keys(entryMeta).forEach((key) => delete entryMeta[key]);
+    Object.assign(entryMeta, state.entryMeta);
+  }
+  if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
   // Always use today — never restore a stale saved date
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   setReportDate(today);
@@ -863,10 +926,12 @@ function showView(name) {
     targets: "Monthly Targets",
     procedures: "Procedure Settings",
     users: "User Controls",
-    centre: "Centre Dashboard"
+    centre: "Centre Dashboard",
+    unlock: "Edit Requests"
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
+  if (name === "unlock") renderUnlockRequests();
 }
 
 function updateTopbarActions(name) {
@@ -905,9 +970,57 @@ function setRole(role, centreIndex = loggedInCentreIndex) {
 
 function renderEntryForCurrentDate() {
   const date = getSelectedEntryDate();
-  renderEntryList("opEntry", opMetrics, "op", loggedInCentreIndex, date);
-  renderEntryList("referralEntry", referralMetrics, "referrals", loggedInCentreIndex, date);
-  renderProcedureTable("procedureEntryTable", true, loggedInCentreIndex, date);
+  const today = todayIST();
+  const locked = date !== today && isDateLocked(date, loggedInCentreIndex);
+  const approved = !locked && date !== today; // past but unlocked
+
+  // ── Lock banner ──
+  const banner = document.getElementById("entryLockBanner");
+  if (banner) {
+    if (date > today) {
+      banner.innerHTML = `<div class="lock-banner future">🚫 Future dates cannot be edited.</div>`;
+      banner.classList.remove("hidden");
+    } else if (locked) {
+      const pending = getPendingUnlock(loggedInCentreIndex, date);
+      banner.innerHTML = pending
+        ? `<div class="lock-banner locked">
+            🔒 <strong>${displayDate(date)}</strong> is locked.
+            <span>Unlock request sent — waiting for admin approval.</span>
+           </div>`
+        : `<div class="lock-banner locked">
+            🔒 <strong>${displayDate(date)}</strong> is locked (past date).
+            <button class="button secondary" id="requestUnlockBtn">Request Edit Access</button>
+           </div>`;
+      banner.classList.remove("hidden");
+      if (!pending) {
+        document.getElementById("requestUnlockBtn")?.addEventListener("click", () => openUnlockModal(date));
+      }
+    } else if (approved) {
+      banner.innerHTML = `<div class="lock-banner unlocked">✅ <strong>${displayDate(date)}</strong> is unlocked for editing by admin approval.</div>`;
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
+  }
+
+  // ── Last updated ──
+  const metaEl = document.getElementById("entryLastUpdated");
+  if (metaEl) {
+    const meta = getEntryMeta(loggedInCentreIndex, date);
+    metaEl.textContent = meta
+      ? `Last saved: ${formatSavedAt(meta.savedAt)}`
+      : "";
+  }
+
+  // Render inputs — pass editable=false when locked
+  const editable = !locked && date <= today;
+  renderEntryList("opEntry", opMetrics, "op", loggedInCentreIndex, date, editable);
+  renderEntryList("referralEntry", referralMetrics, "referrals", loggedInCentreIndex, date, editable);
+  renderProcedureTable("procedureEntryTable", editable, loggedInCentreIndex, date);
+
+  // Show/hide save button
+  const saveBtn = document.getElementById("saveBtn");
+  if (saveBtn) saveBtn.classList.toggle("hidden", !editable);
 }
 
 function updateFromDailyEntry() {
@@ -922,6 +1035,12 @@ function updateFromDailyEntry() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   if (date > today) {
     showToast("Cannot save data for a future date.");
+    return;
+  }
+
+  // Guard: disallow locked past dates
+  if (isDateLocked(date, loggedInCentreIndex)) {
+    showToast("🔒 This date is locked. Request admin approval to edit past data.");
     return;
   }
 
@@ -959,6 +1078,9 @@ function updateFromDailyEntry() {
     setProcedure(entry, procedure, "kasp", kaspToday);
     setProcedure(entry, procedure, "medisep", medisepToday);
   });
+
+  // Record last-updated metadata
+  setEntryMeta(loggedInCentreIndex, date, center.name);
 
   setReportDate(date);
   refreshCenterRollups(reportDate);
@@ -1079,7 +1201,7 @@ function bindProcedureInputs(tbody) {
   });
 }
 
-function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentreIndex, date = getSelectedEntryDate()) {
+function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentreIndex, date = getSelectedEntryDate(), editable = true) {
   const container = document.getElementById(id);
   container.innerHTML = `
     <div class="entry-row header">
@@ -1090,23 +1212,32 @@ function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentr
     </div>
   `;
   const entry = getEntry(centerIndex, date);
-  metrics.forEach((metric, index) => {
+  metrics.forEach((metric) => {
     const prev = sumOpBefore(centerIndex, date, metric, source);
-    const today = currencySafeNumber(entry[source][metric]);
+    const todayVal = currencySafeNumber(entry[source][metric]);
     const row = document.createElement("div");
     row.className = "entry-row";
     row.dataset.metric = metric;
-    row.innerHTML = `
-      <span>${metric}</span>
-      <output>${prev}</output>
-      <input type="number" min="0" value="${today}" aria-label="${metric} current day" />
-      <output>${prev + today}</output>
-    `;
-    const input = row.querySelector("input");
-    const total = row.querySelectorAll("output")[1];
-    input.addEventListener("input", () => {
-      total.textContent = prev + currencySafeNumber(input.value);
-    });
+    if (editable) {
+      row.innerHTML = `
+        <span>${metric}</span>
+        <output>${prev}</output>
+        <input type="number" min="0" value="${todayVal}" aria-label="${metric} current day" />
+        <output>${prev + todayVal}</output>
+      `;
+      const input = row.querySelector("input");
+      const total = row.querySelectorAll("output")[1];
+      input.addEventListener("input", () => {
+        total.textContent = prev + currencySafeNumber(input.value);
+      });
+    } else {
+      row.innerHTML = `
+        <span>${metric}</span>
+        <output>${prev}</output>
+        <output class="locked-value">${todayVal}</output>
+        <output>${prev + todayVal}</output>
+      `;
+    }
     container.appendChild(row);
   });
 }
@@ -1492,6 +1623,14 @@ function setupAdminControls() {
   document.getElementById("addCentreBtn").addEventListener("click", addCenter);
   document.getElementById("newCentreName").addEventListener("keydown", (event) => {
     if (event.key === "Enter") addCenter();
+  });
+
+  // Unlock modal
+  document.getElementById("unlockModalClose")?.addEventListener("click", closeUnlockModal);
+  document.getElementById("unlockModalCancel")?.addEventListener("click", closeUnlockModal);
+  document.getElementById("unlockModalSubmit")?.addEventListener("click", submitUnlockRequest);
+  document.getElementById("unlockModal")?.addEventListener("click", (e) => {
+    if (e.target === document.getElementById("unlockModal")) closeUnlockModal();
   });
 }
 
@@ -2140,6 +2279,125 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
+// ─── Unlock request modal ────────────────────────────────────────────────────
+
+function openUnlockModal(date) {
+  document.getElementById("unlockModalDate").textContent = displayDate(date);
+  document.getElementById("unlockReason").value = "";
+  document.getElementById("unlockModal").classList.remove("hidden");
+  document.getElementById("unlockReason").focus();
+}
+
+function closeUnlockModal() {
+  document.getElementById("unlockModal").classList.add("hidden");
+}
+
+function submitUnlockRequest() {
+  const reason = document.getElementById("unlockReason").value.trim();
+  if (!reason) {
+    showToast("Please enter a reason for the request.");
+    return;
+  }
+  const date = getSelectedEntryDate();
+  // Prevent duplicate pending request
+  if (getPendingUnlock(loggedInCentreIndex, date)) {
+    showToast("A request for this date is already pending.");
+    closeUnlockModal();
+    return;
+  }
+  unlockRequests.push({
+    id: Date.now(),
+    centreIndex: loggedInCentreIndex,
+    centreName: centers[loggedInCentreIndex].name,
+    date,
+    reason,
+    status: "pending",
+    requestedAt: new Date().toISOString(),
+    resolvedAt: null
+  });
+  persistSoon();
+  closeUnlockModal();
+  renderEntryForCurrentDate();
+  showToast("Unlock request sent to admin.");
+}
+
+// ─── Admin unlock panel ──────────────────────────────────────────────────────
+
+function renderUnlockRequests() {
+  const container = document.getElementById("unlockRequestList");
+  if (!container) return;
+
+  const pending = unlockRequests.filter(r => r.status === "pending");
+  const resolved = unlockRequests.filter(r => r.status !== "pending").slice(-20).reverse();
+
+  // Update nav badge
+  const badge = document.getElementById("unlockNavBadge");
+  if (badge) {
+    badge.textContent = pending.length || "";
+    badge.classList.toggle("hidden", pending.length === 0);
+  }
+
+  if (pending.length === 0 && resolved.length === 0) {
+    container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No unlock requests yet.</p>`;
+    return;
+  }
+
+  const renderCard = (req) => {
+    const isPending = req.status === "pending";
+    const statusBadge = isPending
+      ? `<span class="unlock-badge pending">Pending</span>`
+      : req.status === "approved"
+        ? `<span class="unlock-badge approved">Approved</span>`
+        : `<span class="unlock-badge rejected">Rejected</span>`;
+
+    const actions = isPending ? `
+      <div class="unlock-actions">
+        <button class="button primary" data-approve="${req.id}">Approve</button>
+        <button class="button secondary" data-reject="${req.id}">Reject</button>
+      </div>` : `<small style="color:var(--muted)">${formatSavedAt(req.resolvedAt)}</small>`;
+
+    return `
+      <div class="unlock-card ${req.status}">
+        <div class="unlock-card-head">
+          <div>
+            <strong>${req.centreName}</strong>
+            <span>${displayDate(req.date)}</span>
+          </div>
+          ${statusBadge}
+        </div>
+        <p class="unlock-reason">"${escapeHtml(req.reason)}"</p>
+        <div class="unlock-meta">
+          <small>Requested: ${formatSavedAt(req.requestedAt)}</small>
+          ${actions}
+        </div>
+      </div>`;
+  };
+
+  container.innerHTML = `
+    ${pending.length ? `<h3 style="margin-bottom:10px">Pending (${pending.length})</h3>` + pending.map(renderCard).join("") : ""}
+    ${resolved.length ? `<h3 style="margin:16px 0 10px">Recent Resolved</h3>` + resolved.map(renderCard).join("") : ""}
+  `;
+
+  container.querySelectorAll("[data-approve]").forEach(btn => {
+    btn.addEventListener("click", () => resolveUnlock(Number(btn.dataset.approve), "approved"));
+  });
+  container.querySelectorAll("[data-reject]").forEach(btn => {
+    btn.addEventListener("click", () => resolveUnlock(Number(btn.dataset.reject), "rejected"));
+  });
+}
+
+function resolveUnlock(id, status) {
+  const req = unlockRequests.find(r => r.id === id);
+  if (!req) return;
+  req.status = status;
+  req.resolvedAt = new Date().toISOString();
+  persistSoon();
+  renderUnlockRequests();
+  showToast(`Request ${status === "approved" ? "✅ approved" : "❌ rejected"} for ${req.centreName} — ${displayDate(req.date)}`);
+}
+
+
+
 async function migrateLegacyPasswords() {
   let changed = false;
   for (const center of centers) {
@@ -2192,6 +2450,7 @@ async function init() {
   renderTargets();
   renderUsers();
   renderProcedures();
+  renderUnlockRequests();
   document.getElementById("saveBtn").addEventListener("click", updateFromDailyEntry);
 
   // Restore session if the tab is still open (sessionStorage survives refresh)

@@ -68,6 +68,9 @@
           <button class="nav-item admin-only" data-view="users">
             <span>Centres & Users</span>
           </button>
+          <button class="nav-item admin-only" data-view="unlock">
+            <span>Edit Requests <span class="nav-badge hidden" id="unlockNavBadge"></span></span>
+          </button>
         </nav>
 
         <div class="sidebar-card">
@@ -348,6 +351,10 @@
             <strong id="entryCentreName">Tirur Centre Login</strong>
             <span id="entryAccessMessage">This user can enter only Tirur data. Other centres are not selectable.</span>
           </div>
+
+          <!-- Lock / unlock status banner -->
+          <div id="entryLockBanner" class="hidden"></div>
+
           <section class="panel">
             <div class="panel-head">
               <div>
@@ -362,6 +369,9 @@
                 <input id="entryDate" type="date" value="2026-04-20" aria-label="Entry date" />
               </div>
             </div>
+
+            <!-- Last updated metadata -->
+            <p id="entryLastUpdated" class="entry-meta"></p>
 
             <div class="entry-grid">
               <div>
@@ -467,6 +477,41 @@
           </section>
         </section>
       </main>
+    </div>
+
+        <!-- ─── Edit Requests (admin only) ─────────────────────────────── -->
+        <section id="unlockView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Edit Requests</h2>
+                <p>Centres can request edit access for locked past dates. Approve or reject below.</p>
+              </div>
+            </div>
+            <div id="unlockRequestList"></div>
+          </section>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- ─── Unlock request modal ──────────────────────────────────────────── -->
+    <div class="modal-overlay hidden" id="unlockModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>Request Edit Access</h2>
+          <button class="modal-close" id="unlockModalClose">&#10005;</button>
+        </div>
+        <p>You are requesting permission to edit data for <strong id="unlockModalDate"></strong>.</p>
+        <label class="modal-field">
+          <span>Reason for edit</span>
+          <textarea id="unlockReason" rows="3" placeholder="Briefly explain why this date needs to be corrected…"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button class="button secondary" id="unlockModalCancel">Cancel</button>
+          <button class="button primary" id="unlockModalSubmit">Send Request</button>
+        </div>
+      </div>
     </div>
 
     <div class="toast" id="toast">Saved prototype data</div>
