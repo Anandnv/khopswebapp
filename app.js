@@ -124,11 +124,32 @@ function isDateLocked(date, centreIndex) {
   return !getApprovedUnlock(centreIndex, date);
 }
 
-/** Returns the approved unlock request for a centre+date, or null */
+/** Returns true if an approved unlock has passed its expiresAt time */
+function isUnlockExpired(req) {
+  if (!req || req.status !== "approved") return true;
+  if (!req.expiresAt) return false; // legacy — no expiry set, treat as valid
+  return Date.now() > new Date(req.expiresAt).getTime();
+}
+
+/** Returns the approved, non-expired unlock request for a centre+date, or null */
 function getApprovedUnlock(centreIndex, date) {
-  return unlockRequests.find(
+  const req = unlockRequests.find(
     (r) => r.centreIndex === centreIndex && r.date === date && r.status === "approved"
-  ) || null;
+  );
+  if (!req || isUnlockExpired(req)) return null;
+  return req;
+}
+
+/** Format remaining time on an unlock window */
+function formatTimeRemaining(expiresAt) {
+  if (!expiresAt) return "";
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return "Expired";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m remaining`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hrs}h ${rem}m remaining` : `${hrs}h remaining`;
 }
 
 /** Returns a pending request for this centre+date, or null */
@@ -997,7 +1018,9 @@ function renderEntryForCurrentDate() {
         document.getElementById("requestUnlockBtn")?.addEventListener("click", () => openUnlockModal(date));
       }
     } else if (approved) {
-      banner.innerHTML = `<div class="lock-banner unlocked">✅ <strong>${displayDate(date)}</strong> is unlocked for editing by admin approval.</div>`;
+      const unlock = getApprovedUnlock(loggedInCentreIndex, date);
+      const timeLeft = unlock?.expiresAt ? ` — ${formatTimeRemaining(unlock.expiresAt)}` : "";
+      banner.innerHTML = `<div class="lock-banner unlocked">✅ <strong>${displayDate(date)}</strong> is unlocked for editing by admin approval${timeLeft}.</div>`;
       banner.classList.remove("hidden");
     } else {
       banner.classList.add("hidden");
@@ -2328,10 +2351,20 @@ function renderUnlockRequests() {
   const container = document.getElementById("unlockRequestList");
   if (!container) return;
 
-  const pending = unlockRequests.filter(r => r.status === "pending");
+  // Mark any approved requests that have since expired
+  let dirty = false;
+  unlockRequests.forEach(r => {
+    if (r.status === "approved" && isUnlockExpired(r)) {
+      r.status = "expired";
+      dirty = true;
+    }
+  });
+  if (dirty) persistSoon();
+
+  const pending  = unlockRequests.filter(r => r.status === "pending");
   const resolved = unlockRequests.filter(r => r.status !== "pending").slice(-20).reverse();
 
-  // Update nav badge
+  // Update nav badge — count pending only
   const badge = document.getElementById("unlockNavBadge");
   if (badge) {
     badge.textContent = pending.length || "";
@@ -2343,28 +2376,46 @@ function renderUnlockRequests() {
     return;
   }
 
+  const statusBadgeHtml = (req) => {
+    const map = {
+      pending:  ["pending",  "Pending"],
+      approved: ["approved", "Approved"],
+      rejected: ["rejected", "Rejected"],
+      expired:  ["expired",  "Expired"]
+    };
+    const [cls, label] = map[req.status] || ["rejected", req.status];
+    return `<span class="unlock-badge ${cls}">${label}</span>`;
+  };
+
   const renderCard = (req) => {
     const isPending = req.status === "pending";
-    const statusBadge = isPending
-      ? `<span class="unlock-badge pending">Pending</span>`
-      : req.status === "approved"
-        ? `<span class="unlock-badge approved">Approved</span>`
-        : `<span class="unlock-badge rejected">Rejected</span>`;
+    const isApproved = req.status === "approved";
+
+    const expiryLine = isApproved && req.expiresAt
+      ? `<small style="color:var(--muted)">Expires: ${formatSavedAt(req.expiresAt)} (${formatTimeRemaining(req.expiresAt)})</small>`
+      : req.resolvedAt
+        ? `<small style="color:var(--muted)">${formatSavedAt(req.resolvedAt)}</small>`
+        : "";
 
     const actions = isPending ? `
       <div class="unlock-actions">
-        <button class="button primary" data-approve="${req.id}">Approve</button>
+        <div class="duration-picker">
+          <span>Access for</span>
+          <button type="button" class="dur-btn" data-mins="30">30 min</button>
+          <button type="button" class="dur-btn" data-mins="60">1 h</button>
+          <button type="button" class="dur-btn" data-mins="240">4 h</button>
+        </div>
         <button class="button secondary" data-reject="${req.id}">Reject</button>
-      </div>` : `<small style="color:var(--muted)">${formatSavedAt(req.resolvedAt)}</small>`;
+      </div>` : expiryLine;
 
     return `
-      <div class="unlock-card ${req.status}">
+      <div class="unlock-card ${req.status}" data-req-id="${req.id}">
         <div class="unlock-card-head">
           <div>
             <strong>${req.centreName}</strong>
             <span>${displayDate(req.date)}</span>
           </div>
-          ${statusBadge}
+          ${statusBadgeHtml(req)}
         </div>
         <p class="unlock-reason">"${escapeHtml(req.reason)}"</p>
         <div class="unlock-meta">
@@ -2375,26 +2426,42 @@ function renderUnlockRequests() {
   };
 
   container.innerHTML = `
-    ${pending.length ? `<h3 style="margin-bottom:10px">Pending (${pending.length})</h3>` + pending.map(renderCard).join("") : ""}
-    ${resolved.length ? `<h3 style="margin:16px 0 10px">Recent Resolved</h3>` + resolved.map(renderCard).join("") : ""}
+    ${pending.length  ? `<h3 style="margin-bottom:10px">Pending (${pending.length})</h3>`       + pending.map(renderCard).join("")  : ""}
+    ${resolved.length ? `<h3 style="margin:16px 0 10px">Recent resolved</h3>` + resolved.map(renderCard).join("") : ""}
   `;
 
-  container.querySelectorAll("[data-approve]").forEach(btn => {
-    btn.addEventListener("click", () => resolveUnlock(Number(btn.dataset.approve), "approved"));
+  // Duration buttons — approve with chosen window
+  container.querySelectorAll(".dur-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest("[data-req-id]");
+      const id = Number(card.dataset.reqId);
+      const mins = Number(btn.dataset.mins);
+      // Highlight selected
+      card.querySelectorAll(".dur-btn").forEach(b => b.classList.remove("dur-selected"));
+      btn.classList.add("dur-selected");
+      resolveUnlock(id, "approved", mins);
+    });
   });
+
   container.querySelectorAll("[data-reject]").forEach(btn => {
-    btn.addEventListener("click", () => resolveUnlock(Number(btn.dataset.reject), "rejected"));
+    btn.addEventListener("click", () => resolveUnlock(Number(btn.dataset.reject), "rejected", 0));
   });
 }
 
-function resolveUnlock(id, status) {
+function resolveUnlock(id, status, durationMins = 0) {
   const req = unlockRequests.find(r => r.id === id);
   if (!req) return;
   req.status = status;
   req.resolvedAt = new Date().toISOString();
+  if (status === "approved" && durationMins > 0) {
+    req.expiresAt = new Date(Date.now() + durationMins * 60 * 1000).toISOString();
+  }
   persistSoon();
   renderUnlockRequests();
-  showToast(`Request ${status === "approved" ? "✅ approved" : "❌ rejected"} for ${req.centreName} — ${displayDate(req.date)}`);
+  const label = status === "approved"
+    ? `✅ Approved for ${durationMins >= 60 ? durationMins / 60 + "h" : durationMins + "min"} — ${req.centreName} / ${displayDate(req.date)}`
+    : `❌ Rejected — ${req.centreName} / ${displayDate(req.date)}`;
+  showToast(label);
 }
 
 
