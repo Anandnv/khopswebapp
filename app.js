@@ -21,11 +21,14 @@ const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
 let persistenceReady = false;
 let saveTimer = null;
-const monthEndDates = {
-  "2026-04": "2026-04-20",
-  "2026-03": "2026-03-31",
-  "2026-02": "2026-02-28"
-};
+
+function getMonthEndDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return lastDay.toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata'
+  });
+}
 const monthStartDates = {
   "2026-04": "2026-04-01",
   "2026-03": "2026-03-01",
@@ -1419,7 +1422,11 @@ function setupEntryDate() {
 function setupMonthSelect() {
   const monthSelect = document.getElementById("monthSelect");
   monthSelect.addEventListener("change", () => {
-    setReportDate(monthEndDates[monthSelect.value]);
+    const today = new Date().toLocaleDateString('en-CA', {
+  timeZone: 'Asia/Kolkata'
+});
+
+setReportDate(today);
     document.getElementById("exportMonth").value = monthSelect.value;
     syncExportDatesToMonth(monthSelect.value);
     refreshCenterRollups(reportDate);
