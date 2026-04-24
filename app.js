@@ -2495,6 +2495,15 @@ async function init() {
     refreshCenterRollups(reportDate);
   }
 
+ // Auto refresh for requests
+  setInterval(() => {
+  if (currentRole === "admin") {
+    renderUnlockRequests();
+    renderPendingAlert();
+    renderConsolidated();
+  }
+}, 5000);
+
   // Hash any legacy plaintext passwords silently on first run
   await migrateLegacyPasswords();
 
