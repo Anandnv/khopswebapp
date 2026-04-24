@@ -2179,6 +2179,10 @@ async function init() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) entryDateInput.value = today;
+
+  // Sync export date range to current month so To Date is never stale
+  const currentMonth = today.slice(0, 7);
+  syncExportDatesToMonth(currentMonth);
   renderConsolidated();
   setReportDate(reportDate);
   renderBars();
