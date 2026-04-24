@@ -1177,4 +1177,3 @@ select:focus, input:focus {
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ─── Unlock view panel min-height ──────────────────────────────────────── */
-#unlockView .panel { min-height: 200px; }

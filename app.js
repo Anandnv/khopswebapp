@@ -952,8 +952,12 @@ function showView(name) {
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
-  if (name === "unlock") requestAnimationFrame(() => renderUnlockRequests());
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (name === "unlock") {
+  renderUnlockRequests();
+  setTimeout(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, 50);
+}
 }
 
 function updateTopbarActions(name) {
@@ -2350,7 +2354,8 @@ function submitUnlockRequest() {
 function renderUnlockRequests() {
   const container = document.getElementById("unlockRequestList");
   if (!container) return;
-
+  container.innerHTML = "";
+  
   // Mark any approved requests that have since expired
   let dirty = false;
   unlockRequests.forEach(r => {
