@@ -421,12 +421,12 @@ function filteredDailyRows() {
         general: payers.general,
         kasp: payers.kasp,
         medisep: payers.medisep,
-        op: currencySafeNumber(entry.op["Total OP"]),
-        ip: currencySafeNumber(entry.op.IP),
-        newOp: currencySafeNumber(entry.op["New OP"]),
-        ecg: currencySafeNumber(entry.op.ECG),
-        echo: currencySafeNumber(entry.op.ECHO),
-        tmt: currencySafeNumber(entry.op.TMT)
+        op: currencySafeNumber((entry.op || {})["Total OP"]),
+        ip: currencySafeNumber((entry.op || {}).IP),
+        newOp: currencySafeNumber((entry.op || {})["New OP"]),
+        ecg: currencySafeNumber((entry.op || {}).ECG),
+        echo: currencySafeNumber((entry.op || {}).ECHO),
+        tmt: currencySafeNumber((entry.op || {}).TMT)
       });
     });
   });
@@ -852,6 +852,7 @@ function renderPayerSplit() {
 
 function showView(name) {
   if (currentRole === "admin" && name === "entry") name = "admin";
+  if (name === "consolidated") name = "admin"; // centre-only nav alias
   if (currentRole === "centre" && !["admin", "entry", "centre"].includes(name)) name = "admin";
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.getElementById(`${name}View`).classList.add("active");
@@ -918,7 +919,7 @@ function updateFromDailyEntry() {
   const date = document.getElementById("entryDate").value;
 
   // Guard: disallow future dates
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   if (date > today) {
     showToast("Cannot save data for a future date.");
     return;
@@ -1420,7 +1421,7 @@ function lastEntryDateForMonth(month) {
   if (!latest) {
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     if (today.slice(0, 7) === month) return today;
-    return monthEndDates[month] || month + "-30";
+    return getMonthEndDate(month + "-01");
   }
   return latest;
 }
@@ -1742,7 +1743,7 @@ function svgPayerChart(totals) {
   return `<svg viewBox="0 0 540 130" role="img" aria-label="Payer split chart">${bars}</svg>`;
 }
 
-function professionalReportHtml(rows) {
+function professionalReportHtml() {
   const range = getExportRange();
   const isDaily = selectedReportType() === "daily";
   const dailyRows = filteredDailyRows();
@@ -1883,7 +1884,7 @@ function professionalReportHtml(rows) {
       <section>
         <h2>Intervention Trend</h2>
         <p>Daily selected interventional procedure count.</p>
-        ${svgBarChart(rows)}
+        ${svgBarChart(dailyRows)}
       </section>
       <section>
         <h2>Payer Split</h2>
@@ -1902,16 +1903,15 @@ function professionalReportHtml(rows) {
 }
 
 function downloadProfessionalReport() {
-  const rows = filteredDailyRows();
   const range = getExportRange();
   const reportWindow = window.open("", "_blank");
   if (!reportWindow) {
-    downloadBlob(professionalReportHtml(rows), `kh-professional-report-${range.fromDate}-to-${range.toDate}.html`, "text/html;charset=utf-8");
+    downloadBlob(professionalReportHtml(), `kh-professional-report-${range.fromDate}-to-${range.toDate}.html`, "text/html;charset=utf-8");
     showToast("Popup blocked. HTML report downloaded instead.");
     return;
   }
   reportWindow.document.open();
-  reportWindow.document.write(professionalReportHtml(rows));
+  reportWindow.document.write(professionalReportHtml());
   reportWindow.document.close();
   reportWindow.addEventListener("load", () => {
     reportWindow.focus();
