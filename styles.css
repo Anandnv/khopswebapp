@@ -644,12 +644,19 @@ select:focus, input:focus {
 /* ─── Filter / report panel ──────────────────────────────────────────────── */
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
 
-.filter-grid label { display: grid; gap: 5px; }
+.filter-grid label { display: grid; gap: 5px; min-width: 0; }
+
+.filter-grid select,
+.filter-grid input[type="date"] {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
 
 .filter-grid span {
   color: var(--muted);
