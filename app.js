@@ -931,7 +931,8 @@ function showView(name) {
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
-  if (name === "unlock") renderUnlockRequests();
+  if (name === "unlock") requestAnimationFrame(() => renderUnlockRequests());
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function updateTopbarActions(name) {
