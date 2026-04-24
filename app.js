@@ -125,15 +125,10 @@ function applyAppState(state) {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
   }
-  const today = new Date().toLocaleDateString('en-CA', {
-  timeZone: 'Asia/Kolkata'
-});
-
-if (state.reportDate === today) {
-  setReportDate(state.reportDate);
-} else {
+  // Always use today — never restore a stale saved date
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   setReportDate(today);
-}
+  return true;
 }
 
 async function setupPersistence() {
@@ -643,18 +638,11 @@ function currencySafeNumber(value) {
 
 function setReportDate(date) {
   reportDate = date;
-
-  // Sync month selector
+  // Sync month selector only — never touch entryDate input
   const month = date.slice(0, 7);
   const monthSelect = document.getElementById("monthSelect");
   if (monthSelect && monthSelect.value !== month) {
     monthSelect.value = month;
-  }
-
-  // ✅ FIX: Sync entry date input
-  const entryDateInput = document.getElementById("entryDate");
-  if (entryDateInput) {
-    entryDateInput.value = date;
   }
 }
 
@@ -1419,16 +1407,32 @@ function setupEntryDate() {
   });
 }
 
+function lastEntryDateForMonth(month) {
+  // Find the latest date across all centres that has data in this month
+  let latest = "";
+  centers.forEach((_, index) => {
+    const centreEntries = ensureCentreEntries(index);
+    Object.keys(centreEntries)
+      .filter((d) => d.slice(0, 7) === month)
+      .forEach((d) => { if (d > latest) latest = d; });
+  });
+  // Fall back to today if it's the current month, else month-end
+  if (!latest) {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    if (today.slice(0, 7) === month) return today;
+    return monthEndDates[month] || month + "-30";
+  }
+  return latest;
+}
+
 function setupMonthSelect() {
   const monthSelect = document.getElementById("monthSelect");
   monthSelect.addEventListener("change", () => {
-    const today = new Date().toLocaleDateString('en-CA', {
-  timeZone: 'Asia/Kolkata'
-});
-
-setReportDate(today);
-    document.getElementById("exportMonth").value = monthSelect.value;
-    syncExportDatesToMonth(monthSelect.value);
+    const selectedMonth = monthSelect.value;
+    const newReportDate = lastEntryDateForMonth(selectedMonth);
+    setReportDate(newReportDate);
+    document.getElementById("exportMonth").value = selectedMonth;
+    syncExportDatesToMonth(selectedMonth);
     refreshCenterRollups(reportDate);
     renderConsolidated();
     renderBars();
@@ -1491,8 +1495,10 @@ function setupAdminControls() {
 }
 
 function syncExportDatesToMonth(month) {
-  document.getElementById("exportFromDate").value = monthStartDates[month];
-  document.getElementById("exportToDate").value = monthEndDates[month];
+  document.getElementById("exportFromDate").value = monthStartDates[month] || month + "-01";
+  // Use the last known entry date for this month, not the hard month-end,
+  // so the export range always matches what the consolidated table shows
+  document.getElementById("exportToDate").value = lastEntryDateForMonth(month);
 }
 
 function renderAdminReportPreview() {
@@ -2168,6 +2174,11 @@ async function init() {
   setupExportFilters();
   setupExportMenus();
   setupAdminControls();
+
+  // Ensure entry date input always starts on today
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const entryDateInput = document.getElementById("entryDate");
+  if (entryDateInput) entryDateInput.value = today;
   renderConsolidated();
   setReportDate(reportDate);
   renderBars();
