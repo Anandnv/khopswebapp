@@ -71,6 +71,9 @@
           <button class="nav-item admin-only" data-view="unlock">
             <span>Edit Requests <span class="nav-badge hidden" id="unlockNavBadge"></span></span>
           </button>
+          <button class="nav-item admin-only" data-view="audit">
+            <span>Audit Log</span>
+          </button>
         </nav>
 
         <div class="sidebar-card">
@@ -488,6 +491,47 @@
     <div id="unlockRequestList"></div>
   </section>
 </section>
+        <!-- ─── Audit Log (admin only) ──────────────────────────────────── -->
+        <section id="auditView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Audit Log</h2>
+                <p>Every save is recorded. Expand an entry to see what changed. Revert to undo a save.</p>
+              </div>
+              <button class="button secondary" id="auditClearFilter">Clear Filters</button>
+            </div>
+
+            <div class="audit-filter-grid">
+              <label>
+                <span>Centre</span>
+                <select id="auditFilterCentre">
+                  <option value="all">All Centres</option>
+                </select>
+              </label>
+              <label>
+                <span>Type</span>
+                <select id="auditFilterType">
+                  <option value="all">All Types</option>
+                  <option value="normal">Normal Save</option>
+                  <option value="unlocked-edit">Unlocked Edit</option>
+                  <option value="revert">Revert</option>
+                </select>
+              </label>
+              <label>
+                <span>Entry Date From</span>
+                <input type="date" id="auditFilterFrom" />
+              </label>
+              <label>
+                <span>Entry Date To</span>
+                <input type="date" id="auditFilterTo" />
+              </label>
+            </div>
+
+            <div id="auditLogList"></div>
+          </section>
+        </section>
+
       </main>
     </div>
 

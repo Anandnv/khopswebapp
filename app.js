@@ -20,6 +20,8 @@ const entries = {};
 const entryMeta = {};
 // unlockRequests: array of { id, centreIndex, centreName, date, reason, status, requestedAt, resolvedAt }
 let unlockRequests = [];
+// auditLog: array of { id, centreIndex, centreName, date, savedAt, savedBy, type, unlockRequestId, before, after }
+let auditLog = [];
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -185,6 +187,76 @@ function formatSavedAt(isoString) {
 
 
 
+// ─── Audit log helpers ───────────────────────────────────────────────────────
+
+function deepCloneEntry(entry) {
+  return JSON.parse(JSON.stringify(entry));
+}
+
+function writeAuditLog(centreIndex, date, before, after) {
+  const center = centers[centreIndex];
+  const isUnlocked = !!getApprovedUnlock(centreIndex, date);
+  const unlockReq = isUnlocked
+    ? unlockRequests.find(r => r.centreIndex === centreIndex && r.date === date && r.status === "approved")
+    : null;
+
+  auditLog.push({
+    id: Date.now(),
+    centreIndex,
+    centreName: center.name,
+    date,
+    savedAt: new Date().toISOString(),
+    savedBy: center.name,
+    type: isUnlocked ? "unlocked-edit" : "normal",
+    unlockRequestId: unlockReq?.id || null,
+    before: deepCloneEntry(before),
+    after:  deepCloneEntry(after)
+  });
+
+  // Keep last 500 entries to avoid bloating state
+  if (auditLog.length > 500) auditLog.splice(0, auditLog.length - 500);
+}
+
+function revertAuditEntry(auditId) {
+  const log = auditLog.find(l => l.id === auditId);
+  if (!log) return;
+
+  const ok = window.confirm(
+    `Revert ${log.centreName} — ${displayDate(log.date)} to the version saved before ${formatSavedAt(log.savedAt)}?\n\nThis will overwrite current data for that date.`
+  );
+  if (!ok) return;
+
+  // Write a new audit entry recording the revert itself
+  const current = deepCloneEntry(getEntry(log.centreIndex, log.date));
+  const entry = getEntry(log.centreIndex, log.date);
+  entry.op         = deepCloneEntry(log.before.op || {});
+  entry.referrals  = deepCloneEntry(log.before.referrals || {});
+  entry.procedures = deepCloneEntry(log.before.procedures || {});
+
+  auditLog.push({
+    id: Date.now(),
+    centreIndex: log.centreIndex,
+    centreName:  log.centreName,
+    date:        log.date,
+    savedAt:     new Date().toISOString(),
+    savedBy:     "Admin (revert)",
+    type:        "revert",
+    revertedFromId: auditId,
+    before:      current,
+    after:       deepCloneEntry(entry)
+  });
+
+  setEntryMeta(log.centreIndex, log.date, "Admin (revert)");
+  refreshCenterRollups(reportDate);
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  if (currentRole === "centre") renderEntryForCurrentDate();
+  persistSoon();
+  renderAuditLog();
+  showToast(`↩️ Reverted ${log.centreName} / ${displayDate(log.date)}`);
+}
+
 function getAppState() {
   return {
     centers,
@@ -192,6 +264,7 @@ function getAppState() {
     entries,
     entryMeta,
     unlockRequests,
+    auditLog,
     reportDate
   };
 }
@@ -209,6 +282,7 @@ function applyAppState(state) {
     Object.assign(entryMeta, state.entryMeta);
   }
   if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
+  if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
   // Always use today — never restore a stale saved date
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   setReportDate(today);
@@ -948,16 +1022,27 @@ function showView(name) {
     procedures: "Procedure Settings",
     users: "User Controls",
     centre: "Centre Dashboard",
-    unlock: "Edit Requests"
+    unlock: "Edit Requests",
+    audit: "Audit Log"
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
   if (name === "unlock") {
-  renderUnlockRequests();
-  setTimeout(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, 50);
-}
+    renderUnlockRequests();
+    setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
+  }
+  if (name === "audit") {
+    // Populate centre filter dynamically
+    const sel = document.getElementById("auditFilterCentre");
+    if (sel) {
+      const current = sel.value;
+      sel.innerHTML = `<option value="all">All Centres</option>` +
+        centers.map((c, i) => `<option value="${i}">${escapeHtml(c.name)}</option>`).join("");
+      sel.value = current;
+    }
+    renderAuditLog();
+    setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
+  }
 }
 
 function updateTopbarActions(name) {
@@ -1082,6 +1167,10 @@ function updateFromDailyEntry() {
 
   const center = centers[loggedInCentreIndex];
   const entry = getEntry(loggedInCentreIndex, date);
+
+  // Snapshot before overwriting
+  const beforeSnapshot = deepCloneEntry(entry);
+
   entry.op = {};
   entry.referrals = {};
   entry.procedures = {};
@@ -1106,6 +1195,9 @@ function updateFromDailyEntry() {
     setProcedure(entry, procedure, "kasp", kaspToday);
     setProcedure(entry, procedure, "medisep", medisepToday);
   });
+
+  // Record audit log (before → after)
+  writeAuditLog(loggedInCentreIndex, date, beforeSnapshot, entry);
 
   // Record last-updated metadata
   setEntryMeta(loggedInCentreIndex, date, center.name);
@@ -2307,7 +2399,140 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
-// ─── Unlock request modal ────────────────────────────────────────────────────
+// ─── Audit Log UI ────────────────────────────────────────────────────────────
+
+function renderAuditLog() {
+  const container = document.getElementById("auditLogList");
+  if (!container) return;
+
+  // Read filter values
+  const filterCentre = document.getElementById("auditFilterCentre")?.value || "all";
+  const filterType   = document.getElementById("auditFilterType")?.value   || "all";
+  const filterFrom   = document.getElementById("auditFilterFrom")?.value   || "";
+  const filterTo     = document.getElementById("auditFilterTo")?.value     || "";
+
+  let logs = [...auditLog].reverse(); // newest first
+
+  if (filterCentre !== "all") logs = logs.filter(l => l.centreIndex === Number(filterCentre));
+  if (filterType   !== "all") logs = logs.filter(l => l.type === filterType);
+  if (filterFrom)             logs = logs.filter(l => l.date >= filterFrom);
+  if (filterTo)               logs = logs.filter(l => l.date <= filterTo);
+
+  if (logs.length === 0) {
+    container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No audit entries match the current filter.</p>`;
+    return;
+  }
+
+  const typeBadge = (type) => {
+    const map = {
+      "normal":        ["audit-badge-normal",   "Normal Save"],
+      "unlocked-edit": ["audit-badge-unlock",   "Unlocked Edit"],
+      "revert":        ["audit-badge-revert",   "Revert"]
+    };
+    const [cls, label] = map[type] || ["audit-badge-normal", type];
+    return `<span class="audit-badge ${cls}">${label}</span>`;
+  };
+
+  function diffSummary(before, after) {
+    const changes = [];
+
+    // OP diff
+    const allOp = new Set([...Object.keys(before.op || {}), ...Object.keys(after.op || {})]);
+    allOp.forEach(k => {
+      const b = before.op?.[k] ?? 0;
+      const a = after.op?.[k]  ?? 0;
+      if (b !== a) changes.push({ section: "OP", field: k, before: b, after: a });
+    });
+
+    // Referrals diff
+    const allRef = new Set([...Object.keys(before.referrals || {}), ...Object.keys(after.referrals || {})]);
+    allRef.forEach(k => {
+      const b = before.referrals?.[k] ?? 0;
+      const a = after.referrals?.[k]  ?? 0;
+      if (b !== a) changes.push({ section: "Referral", field: k, before: b, after: a });
+    });
+
+    // Procedures diff
+    const allProc = new Set([...Object.keys(before.procedures || {}), ...Object.keys(after.procedures || {})]);
+    allProc.forEach(proc => {
+      ["general", "kasp", "medisep"].forEach(payer => {
+        const b = before.procedures?.[proc]?.[payer] ?? 0;
+        const a = after.procedures?.[proc]?.[payer]  ?? 0;
+        if (b !== a) changes.push({ section: proc, field: payer, before: b, after: a });
+      });
+    });
+
+    return changes;
+  }
+
+  container.innerHTML = logs.map(log => {
+    const changes = diffSummary(log.before || {}, log.after || {});
+    const hasChanges = changes.length > 0;
+
+    const diffRows = hasChanges
+      ? changes.map(c => `
+          <tr>
+            <td>${escapeHtml(c.section)}</td>
+            <td>${escapeHtml(c.field)}</td>
+            <td class="audit-diff-before">${c.before}</td>
+            <td class="audit-diff-after">${c.after}</td>
+            <td class="${c.after > c.before ? "audit-up" : "audit-down"}">${c.after > c.before ? "▲" : "▼"} ${Math.abs(c.after - c.before)}</td>
+          </tr>`).join("")
+      : `<tr><td colspan="5" style="color:var(--muted);font-style:italic">No field changes detected (same values re-saved)</td></tr>`;
+
+    const canRevert = log.type !== "revert" && hasChanges;
+
+    return `
+      <div class="audit-card" data-audit-id="${log.id}">
+        <div class="audit-card-head">
+          <div class="audit-card-title">
+            <strong>${escapeHtml(log.centreName)}</strong>
+            <span class="audit-date-tag">${displayDate(log.date)}</span>
+            ${typeBadge(log.type)}
+          </div>
+          <div class="audit-card-meta">
+            <span>${formatSavedAt(log.savedAt)}</span>
+            <span>by <strong>${escapeHtml(log.savedBy)}</strong></span>
+            ${canRevert
+              ? `<button class="button secondary audit-revert-btn" data-revert-id="${log.id}">↩ Revert</button>`
+              : ""}
+          </div>
+        </div>
+        <details class="audit-diff">
+          <summary>${hasChanges ? `${changes.length} field${changes.length > 1 ? "s" : ""} changed` : "No changes"}</summary>
+          <div class="audit-diff-wrap">
+            <table class="audit-diff-table">
+              <thead>
+                <tr><th>Section</th><th>Field</th><th>Before</th><th>After</th><th>Δ</th></tr>
+              </thead>
+              <tbody>${diffRows}</tbody>
+            </table>
+          </div>
+        </details>
+      </div>`;
+  }).join("");
+
+  // Bind revert buttons
+  container.querySelectorAll(".audit-revert-btn").forEach(btn => {
+    btn.addEventListener("click", () => revertAuditEntry(Number(btn.dataset.revertId)));
+  });
+}
+
+function setupAuditFilters() {
+  const ids = ["auditFilterCentre", "auditFilterType", "auditFilterFrom", "auditFilterTo"];
+  ids.forEach(id => {
+    document.getElementById(id)?.addEventListener("change", renderAuditLog);
+  });
+  document.getElementById("auditClearFilter")?.addEventListener("click", () => {
+    document.getElementById("auditFilterCentre").value = "all";
+    document.getElementById("auditFilterType").value   = "all";
+    document.getElementById("auditFilterFrom").value   = "";
+    document.getElementById("auditFilterTo").value     = "";
+    renderAuditLog();
+  });
+}
+
+
 
 function openUnlockModal(date) {
   document.getElementById("unlockModalDate").textContent = displayDate(date);
@@ -2533,6 +2758,8 @@ async function init() {
   renderUsers();
   renderProcedures();
   renderUnlockRequests();
+  renderAuditLog();
+  setupAuditFilters();
   document.getElementById("saveBtn").addEventListener("click", updateFromDailyEntry);
 
   // Restore session if the tab is still open (sessionStorage survives refresh)
