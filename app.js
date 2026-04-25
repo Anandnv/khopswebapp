@@ -469,6 +469,8 @@ async function saveAll() {
     console.error("saveAll failed:", err);
     showToast("❌ Save failed (network issue)");
   }
+  await createBackup();
+  await cleanupBackups();
 }
 
 // Targeted save called right after a centre submits daily entry
@@ -1333,6 +1335,9 @@ function showView(name) {
     renderAuditLog();
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
   }
+  if (name === "backup") {
+  renderBackups();
+}
 }
 
 function updateTopbarActions(name) {
@@ -3001,8 +3006,137 @@ async function migrateLegacyPasswords() {
   if (changed) persistSoon();
 }
 
+// ================= BACKUP SYSTEM =================
+
+// Create backup
+async function createBackup() {
+  if (!supabaseClient) return;
+
+  const el = document.getElementById("backupStatus");
+
+  // 👉 SHOW LOADING
+  if (el) {
+    el.textContent = "⏳ Backing up...";
+  }
+
+  const data = getAppState();
+
+  try {
+    await supabaseClient
+  .from("app_backups")
+  .insert({
+    backup_data: data,
+    version: "1.0",
+    app_version: "KHOPS_v1",
+    created_by: currentRole || "system",
+    created_at: new Date().toISOString()  
+  });
+
+    console.log("Backup created");
+
+    // 👉 SHOW SUCCESS
+    if (el) {
+      el.textContent = "✅ Last backup: " + new Date().toLocaleString();
+    }
+
+  } catch (err) {
+    console.error("Backup failed", err);
+
+    // 👉 SHOW ERROR
+    if (el) {
+      el.textContent = "❌ Backup failed";
+    }
+  }
+}
+
+// Cleanup old backups (90 days)
+async function cleanupBackups() {
+  if (!supabaseClient) return;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 90);
+
+  try {
+    await supabaseClient
+      .from("app_backups")
+      .delete()
+      .lt("created_at", cutoff.toISOString());
+
+    console.log("Old backups cleaned");
+  } catch (err) {
+    console.error("Cleanup failed", err);
+  }
+}
+
+// Load backups list
+async function loadBackups() {
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("id, created_at")
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (error) {
+    console.error(error);
+    return [];
+  }
+
+  return data;
+}
+
+// Restore backup
+async function restoreBackup(backupId) {
+  if (!confirm("⚠️ This will overwrite ALL current data. Continue?")) return;
+
+  showToast("⏳ Restoring backup...");
+
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("backup_data")
+    .eq("id", backupId)
+    .single();
+
+  if (error || !data) {
+    showToast("❌ Failed to load backup");
+    return;
+  }
+
+  const state = data.backup_data;
+
+  applyAppState(state);
+
+  try {
+    await saveAll();
+
+    showToast("✅ Backup restored");
+
+    location.reload();
+
+  } catch (err) {
+    console.error(err);
+    showToast("❌ Restore failed");
+  }
+}
+async function renderBackups() {
+  const container = document.getElementById("backupList");
+  const backups = await loadBackups();
+
+  if (!backups.length) {
+    container.innerHTML = "<p>No backups found</p>";
+    return;
+  }
+
+  container.innerHTML = backups.map(b => `
+    <div style="margin-bottom:10px;">
+      <strong>${new Date(b.created_at).toLocaleString()}</strong>
+      <button onclick="restoreBackup(${b.id})">Restore</button>
+    </div>
+  `).join("");
+}
+
 async function init() {
   const loadedState = await setupPersistence();
+  await ensureDailyBackup();
   const hasAnyEntries = Object.keys(entries).some(
     (k) => Object.keys(entries[k] || {}).length > 0
   );
@@ -3068,6 +3202,31 @@ async function init() {
       setRole("centre", session.centreIndex);
     }
   }
+ // Backup and restore 
+  setInterval(() => {
+  const now = new Date().toLocaleTimeString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+
+}, 60000);
+
+async function ensureDailyBackup() {
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata"
+  });
+
+  const lastBackupDate = localStorage.getItem("lastBackupDate");
+
+  if (lastBackupDate !== today) {
+    await createBackup();
+    localStorage.setItem("lastBackupDate", today);
+    console.log("Daily backup created");
+  }
+}
+setInterval(ensureDailyBackup, 60000);
+
 }
 
 init();

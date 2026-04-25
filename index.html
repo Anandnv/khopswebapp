@@ -555,6 +555,34 @@
       </div>
     </div>
 
+    <!-- ─── Backup view ──────────────────────────────────────────── -->
+    <div id="backupView" class="view">
+  <h2>Backup & Restore</h2>
+
+  <div style="margin-bottom:10px;">
+    <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
+    <span id="backupStatus" style="margin-left:10px;color:gray;"></span>
+  </div>
+
+  <div id="backupList"></div>
+</div>
+
+    <div class="nav-item" data-view="backup">Backups</div>
+
+<div id="toast" style="
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: #333;
+  color: white;
+  padding: 10px 15px;
+  border-radius: 6px;
+  display: none;
+  z-index: 9999;
+">
+</div>
+  
+
     <div class="toast" id="toast">Saved prototype data</div>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
