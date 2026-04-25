@@ -3127,11 +3127,18 @@ async function renderBackups() {
   }
 
   container.innerHTML = backups.map(b => `
-    <div style="margin-bottom:10px;">
-      <strong>${new Date(b.created_at).toLocaleString()}</strong>
-      <button onclick="restoreBackup(${b.id})">Restore</button>
+  <div class="unlock-card">
+    <div class="unlock-card-head">
+      <div>
+        <strong>${new Date(b.created_at).toLocaleString()}</strong>
+        <span style="font-size:12px;color:gray;">Backup ID: ${b.id}</span>
+      </div>
+      <button class="button secondary" onclick="restoreBackup(${b.id})">
+        Restore
+      </button>
     </div>
-  `).join("");
+  </div>
+`).join("");
 }
 
 async function init() {

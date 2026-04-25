@@ -74,6 +74,10 @@
           <button class="nav-item admin-only" data-view="audit">
             <span>Audit Log</span>
           </button>
+          
+          <button class="nav-item admin-only" data-view="backup">
+          <span>Backups</span>
+          </button>
         </nav>
 
         <div class="sidebar-card">
@@ -491,7 +495,23 @@
     <div id="unlockRequestList"></div>
   </section>
 </section>
-        <!-- ─── Audit Log (admin only) ──────────────────────────────────── -->
+        <!-- ─── Backup and restore  ──────────────────────────────────── -->
+         <section id="backupView" class="view">
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>Backup & Restore</h2>
+        <p>Manage system backups and restore previous data safely.</p>
+      </div>
+      <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
+    </div>
+
+    <p id="backupStatus" style="margin-bottom:10px;color:gray;"></p>
+
+    <div id="backupList"></div>
+  </section>
+</section>
+<!-- ─── Audit Log (admin only) ──────────────────────────────────── -->
         <section id="auditView" class="view">
           <section class="panel">
             <div class="panel-head">
@@ -555,20 +575,9 @@
       </div>
     </div>
 
-    <!-- ─── Backup view ──────────────────────────────────────────── -->
-    <div id="backupView" class="view">
-  <h2>Backup & Restore</h2>
+   
 
-  <div style="margin-bottom:10px;">
-    <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
-    <span id="backupStatus" style="margin-left:10px;color:gray;"></span>
-  </div>
-
-  <div id="backupList"></div>
-</div>
-
-    <div class="nav-item" data-view="backup">Backups</div>
-
+    
 <div id="toast" style="
   position: fixed;
   bottom: 20px;
