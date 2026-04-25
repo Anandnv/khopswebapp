@@ -252,7 +252,14 @@ function revertAuditEntry(auditId) {
   renderBars();
   renderPayerSplit();
   if (currentRole === "centre") renderEntryForCurrentDate();
-  persistSoon();
+  saveLocalBackup();
+  if (supabaseClient) {
+    Promise.all([
+      saveOneEntry(log.centreIndex, log.date),
+      saveOneMeta(log.centreIndex, log.date),
+      saveLatestAuditEntry()
+    ]).catch(console.error);
+  }
   renderAuditLog();
   showToast(`↩️ Reverted ${log.centreName} / ${displayDate(log.date)}`);
 }
@@ -298,63 +305,346 @@ async function setupPersistence() {
   return loadPersistedState();
 }
 
+// ─── LOAD ─────────────────────────────────────────────────────────────────────
+
 async function loadPersistedState() {
   if (supabaseClient) {
-    const { data, error } = await supabaseClient
-      .from("app_state")
-      .select("state")
-      .eq("id", "main")
-      .maybeSingle();
-    if (!error && data?.state) return applyAppState(data.state);
-    if (error) console.warn("Supabase load failed, falling back to localStorage", error);
+    try {
+      const ok = await loadFromSupabase();
+      if (ok) return true;
+      console.warn("Supabase load failed or empty — falling back to localStorage");
+    } catch (err) {
+      console.warn("Supabase load threw:", err);
+    }
   }
+  return loadFromLocalStorage();
+}
+
+async function loadFromSupabase() {
+  // 1. App config (centers + procedures)
+  const { data: cfg, error: cfgErr } = await supabaseClient
+    .from("app_config")
+    .select("centers, procedures")
+    .eq("id", "main")
+    .maybeSingle();
+
+  if (cfgErr || !cfg) return false;
+
+  centers = cfg.centers || centers;
+  procedureSettings = cfg.procedures || procedureSettings;
+
+  // 2. Daily entries → rebuild nested entries object
+  const { data: rows, error: rowsErr } = await supabaseClient
+    .from("daily_entries")
+    .select("centre_index, entry_date, op, referrals, procedures");
+
+  if (!rowsErr && rows) {
+    Object.keys(entries).forEach(k => delete entries[k]);
+    rows.forEach(r => {
+      if (!entries[r.centre_index]) entries[r.centre_index] = {};
+      entries[r.centre_index][r.entry_date] = {
+        op:         r.op         || {},
+        referrals:  r.referrals  || {},
+        procedures: r.procedures || {}
+      };
+    });
+  }
+
+  // 3. Entry metadata
+  const { data: metas, error: metaErr } = await supabaseClient
+    .from("entry_meta")
+    .select("centre_index, entry_date, saved_at, saved_by");
+
+  if (!metaErr && metas) {
+    Object.keys(entryMeta).forEach(k => delete entryMeta[k]);
+    metas.forEach(m => {
+      if (!entryMeta[m.centre_index]) entryMeta[m.centre_index] = {};
+      entryMeta[m.centre_index][m.entry_date] = {
+        savedAt: m.saved_at,
+        savedBy: m.saved_by
+      };
+    });
+  }
+
+  // 4. Unlock requests
+  const { data: reqs, error: reqsErr } = await supabaseClient
+    .from("unlock_requests")
+    .select("*")
+    .order("requested_at", { ascending: false });
+
+  if (!reqsErr && reqs) {
+    unlockRequests = reqs.map(r => ({
+      id:             r.id,
+      centreIndex:    r.centre_index,
+      centreName:     r.centre_name,
+      date:           r.entry_date,
+      reason:         r.reason,
+      status:         r.status,
+      requestedAt:    r.requested_at,
+      resolvedAt:     r.resolved_at,
+      expiresAt:      r.expires_at
+    }));
+  }
+
+  // 5. Audit log (most recent 500)
+  const { data: logs, error: logsErr } = await supabaseClient
+    .from("audit_log")
+    .select("*")
+    .order("saved_at", { ascending: false })
+    .limit(500);
+
+  if (!logsErr && logs) {
+    auditLog = logs.reverse().map(l => ({
+      id:               l.id,
+      centreIndex:      l.centre_index,
+      centreName:       l.centre_name,
+      date:             l.entry_date,
+      savedAt:          l.saved_at,
+      savedBy:          l.saved_by,
+      type:             l.type,
+      unlockRequestId:  l.unlock_request_id,
+      revertedFromId:   l.reverted_from_id,
+      before:           l.before_state || {},
+      after:            l.after_state  || {}
+    }));
+  }
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  setReportDate(today);
+  return true;
+}
+
+function loadFromLocalStorage() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return false;
   try {
-    return applyAppState(JSON.parse(saved));
-  } catch (error) {
-    console.warn("Saved local state could not be parsed", error);
+    const state = JSON.parse(saved);
+    if (Array.isArray(state.centers)) centers = state.centers;
+    if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
+    if (state.entries && typeof state.entries === "object") {
+      Object.keys(entries).forEach(k => delete entries[k]);
+      Object.assign(entries, state.entries);
+    }
+    if (state.entryMeta && typeof state.entryMeta === "object") {
+      Object.keys(entryMeta).forEach(k => delete entryMeta[k]);
+      Object.assign(entryMeta, state.entryMeta);
+    }
+    if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
+    if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    setReportDate(today);
+    return true;
+  } catch (err) {
+    console.warn("localStorage parse failed:", err);
     return false;
   }
 }
 
+// ─── SAVE ─────────────────────────────────────────────────────────────────────
+
+// Granular save: only persist what changed.
+// Call persistSoon() for debounced full save.
+// Call persistEntry(centreIndex, date) for a targeted entry + meta + audit save.
+
 function persistSoon() {
   if (!persistenceReady) return;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveAppState, 250);
+  saveTimer = setTimeout(saveAll, 250);
 }
 
-async function saveAppState() {
-  const state = getAppState();
-
-  // Always save locally as backup
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-
-  if (!supabaseClient) {
-    showToast("Saved locally (offline mode)");
-    return;
-  }
+async function saveAll() {
+  saveLocalBackup();
+  if (!supabaseClient) { showToast("Saved locally (offline mode)"); return; }
 
   try {
-    const { error } = await supabaseClient
-      .from("app_state")
-      .upsert({
-        id: "main",
-        state,
-        updated_at: new Date().toISOString()
-      });
-
-    if (error) {
-      console.error("Supabase save failed:", error);
-      showToast("❌ Save failed (server error)");
-      return;
-    }
-
+    await Promise.all([
+      saveConfig(),
+      saveAllEntries(),
+      saveAllMeta(),
+      saveAllUnlockRequests(),
+      saveAllAuditLog()
+    ]);
     showToast("✅ Data saved successfully");
   } catch (err) {
-    console.error("Unexpected save error:", err);
+    console.error("saveAll failed:", err);
     showToast("❌ Save failed (network issue)");
   }
+}
+
+// Targeted save called right after a centre submits daily entry
+async function persistEntry(centreIndex, date) {
+  saveLocalBackup();
+  if (!supabaseClient) { showToast("Saved locally (offline mode)"); return; }
+  try {
+    await Promise.all([
+      saveOneEntry(centreIndex, date),
+      saveOneMeta(centreIndex, date),
+      saveLatestAuditEntry()
+    ]);
+    showToast("✅ Data saved successfully");
+  } catch (err) {
+    console.error("persistEntry failed:", err);
+    showToast("❌ Save failed — check your connection");
+  }
+}
+
+// ─── Individual save helpers ──────────────────────────────────────────────────
+
+function saveLocalBackup() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(getAppState()));
+}
+
+async function saveConfig() {
+  const { error } = await supabaseClient
+    .from("app_config")
+    .upsert({ id: "main", centers, procedures: procedureSettings, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+async function saveOneEntry(centreIndex, date) {
+  const entry = getEntry(centreIndex, date);
+  const { error } = await supabaseClient
+    .from("daily_entries")
+    .upsert({
+      centre_index: centreIndex,
+      centre_name:  centers[centreIndex]?.name || "",
+      entry_date:   date,
+      op:           entry.op         || {},
+      referrals:    entry.referrals  || {},
+      procedures:   entry.procedures || {},
+      updated_at:   new Date().toISOString()
+    }, { onConflict: "centre_index,entry_date" });
+  if (error) throw error;
+}
+
+async function saveAllEntries() {
+  const rows = [];
+  Object.keys(entries).forEach(ci => {
+    Object.keys(entries[ci]).forEach(date => {
+      const e = entries[ci][date];
+      rows.push({
+        centre_index: Number(ci),
+        centre_name:  centers[ci]?.name || "",
+        entry_date:   date,
+        op:           e.op         || {},
+        referrals:    e.referrals  || {},
+        procedures:   e.procedures || {},
+        updated_at:   new Date().toISOString()
+      });
+    });
+  });
+  if (!rows.length) return;
+  const { error } = await supabaseClient
+    .from("daily_entries")
+    .upsert(rows, { onConflict: "centre_index,entry_date" });
+  if (error) throw error;
+}
+
+async function saveOneMeta(centreIndex, date) {
+  const meta = getEntryMeta(centreIndex, date);
+  if (!meta) return;
+  const { error } = await supabaseClient
+    .from("entry_meta")
+    .upsert({
+      centre_index: centreIndex,
+      entry_date:   date,
+      saved_at:     meta.savedAt,
+      saved_by:     meta.savedBy
+    }, { onConflict: "centre_index,entry_date" });
+  if (error) throw error;
+}
+
+async function saveAllMeta() {
+  const rows = [];
+  Object.keys(entryMeta).forEach(ci => {
+    Object.keys(entryMeta[ci]).forEach(date => {
+      const m = entryMeta[ci][date];
+      rows.push({ centre_index: Number(ci), entry_date: date, saved_at: m.savedAt, saved_by: m.savedBy });
+    });
+  });
+  if (!rows.length) return;
+  const { error } = await supabaseClient
+    .from("entry_meta")
+    .upsert(rows, { onConflict: "centre_index,entry_date" });
+  if (error) throw error;
+}
+
+async function saveAllUnlockRequests() {
+  if (!unlockRequests.length) return;
+  const rows = unlockRequests.map(r => ({
+    id:           r.id,
+    centre_index: r.centreIndex,
+    centre_name:  r.centreName,
+    entry_date:   r.date,
+    reason:       r.reason,
+    status:       r.status,
+    requested_at: r.requestedAt,
+    resolved_at:  r.resolvedAt || null,
+    expires_at:   r.expiresAt  || null
+  }));
+  const { error } = await supabaseClient
+    .from("unlock_requests")
+    .upsert(rows, { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function saveOneUnlockRequest(req) {
+  const { error } = await supabaseClient
+    .from("unlock_requests")
+    .upsert({
+      id:           req.id,
+      centre_index: req.centreIndex,
+      centre_name:  req.centreName,
+      entry_date:   req.date,
+      reason:       req.reason,
+      status:       req.status,
+      requested_at: req.requestedAt,
+      resolved_at:  req.resolvedAt || null,
+      expires_at:   req.expiresAt  || null
+    }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function saveLatestAuditEntry() {
+  if (!auditLog.length) return;
+  const l = auditLog[auditLog.length - 1];
+  const { error } = await supabaseClient
+    .from("audit_log")
+    .upsert({
+      id:                l.id,
+      centre_index:      l.centreIndex,
+      centre_name:       l.centreName,
+      entry_date:        l.date,
+      saved_at:          l.savedAt,
+      saved_by:          l.savedBy,
+      type:              l.type,
+      unlock_request_id: l.unlockRequestId || null,
+      reverted_from_id:  l.revertedFromId  || null,
+      before_state:      l.before || {},
+      after_state:       l.after  || {}
+    }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+async function saveAllAuditLog() {
+  if (!auditLog.length) return;
+  const rows = auditLog.map(l => ({
+    id:                l.id,
+    centre_index:      l.centreIndex,
+    centre_name:       l.centreName,
+    entry_date:        l.date,
+    saved_at:          l.savedAt,
+    saved_by:          l.savedBy,
+    type:              l.type,
+    unlock_request_id: l.unlockRequestId || null,
+    reverted_from_id:  l.revertedFromId  || null,
+    before_state:      l.before || {},
+    after_state:       l.after  || {}
+  }));
+  const { error } = await supabaseClient
+    .from("audit_log")
+    .upsert(rows, { onConflict: "id" });
+  if (error) throw error;
 }
 let procedureSettings = [
   { name: "CAG", counted: false, isCag: true, active: true },
@@ -1208,7 +1498,7 @@ function updateFromDailyEntry() {
   renderBars();
   renderPayerSplit();
   renderEntryForCurrentDate();
-  persistSoon();
+  persistEntry(loggedInCentreIndex, date);
   showToast(`${center.name} entry saved and reflected in reports`);
 }
 
@@ -2558,7 +2848,7 @@ function submitUnlockRequest() {
     closeUnlockModal();
     return;
   }
-  unlockRequests.push({
+  const newReq = {
     id: Date.now(),
     centreIndex: loggedInCentreIndex,
     centreName: centers[loggedInCentreIndex].name,
@@ -2567,8 +2857,10 @@ function submitUnlockRequest() {
     status: "pending",
     requestedAt: new Date().toISOString(),
     resolvedAt: null
-  });
-  persistSoon();
+  };
+  unlockRequests.push(newReq);
+  saveLocalBackup();
+  if (supabaseClient) saveOneUnlockRequest(newReq).catch(console.error);
   closeUnlockModal();
   renderEntryForCurrentDate();
   showToast("Unlock request sent to admin.");
@@ -2686,7 +2978,8 @@ function resolveUnlock(id, status, durationMins = 0) {
   if (status === "approved" && durationMins > 0) {
     req.expiresAt = new Date(Date.now() + durationMins * 60 * 1000).toISOString();
   }
-  persistSoon();
+  saveLocalBackup();
+  if (supabaseClient) saveOneUnlockRequest(req).catch(console.error);
   renderUnlockRequests();
   const label = status === "approved"
     ? `✅ Approved for ${durationMins >= 60 ? durationMins / 60 + "h" : durationMins + "min"} — ${req.centreName} / ${displayDate(req.date)}`
