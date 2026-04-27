@@ -80,7 +80,21 @@ create index if not exists audit_log_centre_date
 create index if not exists audit_log_saved_at
   on audit_log (saved_at desc);
 
--- ── 6. Row Level Security ──────────────────────────────────────────────────────
+-- ── 6. App backups ────────────────────────────────────────────────────────────
+-- Full daily snapshots for disaster recovery. Kept 90 days then auto-cleaned.
+create table if not exists public.app_backups (
+  id           bigint generated always as identity primary key,
+  backup_data  jsonb        not null,
+  version      text,
+  app_version  text,
+  created_by   text,
+  created_at   timestamptz  not null default now()
+);
+
+create index if not exists app_backups_created_at_idx
+  on public.app_backups (created_at desc);
+
+-- ── 7. Row Level Security ──────────────────────────────────────────────────────
 -- Mirrors your existing app_state policy pattern exactly.
 -- app_config is a single-row table (id = 'main') — INSERT and UPDATE are
 -- locked to that row, same as your current "Insert main only" / "Update main only".
@@ -93,6 +107,15 @@ alter table daily_entries   enable row level security;
 alter table entry_meta      enable row level security;
 alter table unlock_requests enable row level security;
 alter table audit_log       enable row level security;
+alter table app_backups     enable row level security;
+
+-- ── app_backups ───────────────────────────────────────────────────────────────
+create policy "Allow read backups"
+  on public.app_backups for select using (true);
+create policy "Allow insert backups"
+  on public.app_backups for insert with check (true);
+create policy "Allow delete backups"
+  on public.app_backups for delete using (true);
 
 -- ── app_config (single-row, id = 'main') ─────────────────────────────────────
 create policy "Read app_config"

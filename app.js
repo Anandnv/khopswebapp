@@ -1315,7 +1315,8 @@ function showView(name) {
     users: "User Controls",
     centre: "Centre Dashboard",
     unlock: "Edit Requests",
-    audit: "Audit Log"
+    audit: "Audit Log",
+    backup: "Backup & Restore"
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
@@ -1324,7 +1325,6 @@ function showView(name) {
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
   }
   if (name === "audit") {
-    // Populate centre filter dynamically
     const sel = document.getElementById("auditFilterCentre");
     if (sel) {
       const current = sel.value;
@@ -1336,8 +1336,9 @@ function showView(name) {
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
   }
   if (name === "backup") {
-  renderBackups();
-}
+    renderBackups();
+    setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
+  }
 }
 
 function updateTopbarActions(name) {
@@ -3141,6 +3142,17 @@ async function renderBackups() {
 `).join("");
 }
 
+async function ensureDailyBackup() {
+  if (!supabaseClient) return;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const lastBackupDate = localStorage.getItem("lastBackupDate");
+  if (lastBackupDate !== today) {
+    await createBackup();
+    localStorage.setItem("lastBackupDate", today);
+    console.log("Daily backup created for", today);
+  }
+}
+
 async function init() {
   const loadedState = await setupPersistence();
   await ensureDailyBackup();
@@ -3209,30 +3221,8 @@ async function init() {
       setRole("centre", session.centreIndex);
     }
   }
- // Backup and restore 
-  setInterval(() => {
-  const now = new Date().toLocaleTimeString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-
-}, 60000);
-
-async function ensureDailyBackup() {
-  const today = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Kolkata"
-  });
-
-  const lastBackupDate = localStorage.getItem("lastBackupDate");
-
-  if (lastBackupDate !== today) {
-    await createBackup();
-    localStorage.setItem("lastBackupDate", today);
-    console.log("Daily backup created");
-  }
-}
-setInterval(ensureDailyBackup, 60000);
+ // Backup and restore — daily check runs every hour
+  setInterval(ensureDailyBackup, 3600000);
 
 }
 
