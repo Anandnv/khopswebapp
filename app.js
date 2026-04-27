@@ -1,13 +1,15 @@
 let centers = [
-  { name: "Tirur", username: "tirur", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Calicut", username: "calicut", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Kochi", username: "kochi", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Malappuram", username: "malappuram", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Perumpilavu", username: "perumpilavu", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Edappal", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 }
+  { name: "Tirur", company: "KH", username: "tirur", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Calicut", company: "KH", username: "calicut", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Kochi", company: "KH", username: "kochi", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Malappuram", company: "KH", username: "malappuram", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Perumpilavu", company: "KH", username: "perumpilavu", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Edappal", company: "KH", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Valanchery", company: "KH", username: "valanchery", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 }
 ];
 const DEFAULT_CENTERS = JSON.parse(JSON.stringify(centers));
+const COMPANY_OPTIONS = ["KH", "Swizton"];
+let activeCompany = "KH";
 
 let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
@@ -209,6 +211,22 @@ function getAssignedCentreIndexes() {
     return admin.assignedCentres.filter(i => i < centers.length);
   }
   return centers.map((_, i) => i);
+}
+
+function ensureCenterCompanies() {
+  centers.forEach((center) => {
+    if (!center.company) center.company = "KH";
+  });
+}
+
+function centerMatchesActiveCompany(center) {
+  return (center?.company || "KH") === activeCompany;
+}
+
+function getCompanyScopedCentreIndexes() {
+  const assigned = getAssignedCentreIndexes();
+  if (currentRole === "centre") return assigned;
+  return assigned.filter((index) => centerMatchesActiveCompany(centers[index]));
 }
 
 
@@ -1245,7 +1263,7 @@ function renderPendingAlert() {
     return;
   }
 
-  const missing = getAssignedCentreIndexes().filter((index) => {
+  const missing = getCompanyScopedCentreIndexes().filter((index) => {
     const entry = entries[index] && entries[index][reportDate];
     const hasEntry = entry && (
       Object.values(entry.op || {}).some(v => v > 0) ||
@@ -1269,10 +1287,10 @@ function renderPendingAlert() {
 function renderConsolidated() {
   refreshCenterRollups(reportDate);
 
-  document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
+  document.getElementById("procedureReportTitle").textContent = `${activeCompany} - Procedures Till ${displayDate(reportDate)}`;
   document.querySelector("#summaryPercent").nextElementSibling.textContent = `Till ${displayDate(reportDate)}`;
 
-  const centerIndexes = getAssignedCentreIndexes();
+  const centerIndexes = getCompanyScopedCentreIndexes();
   const tbody = document.querySelector("#consolidatedTable tbody");
   const tfoot = document.querySelector("#consolidatedTable tfoot");
   tbody.innerHTML = "";
@@ -1376,8 +1394,9 @@ if (currentRole === "admin") {
 function renderOpsConsolidated() {
   const tbody = document.querySelector("#opsConsolidatedTable tbody");
   if (!tbody) return;
-  document.getElementById("opsReportTitle").textContent = `OP & Diagnostics Till ${displayDate(reportDate)}`;
-  tbody.innerHTML = centers.map((center, index) => {
+  document.getElementById("opsReportTitle").textContent = `${activeCompany} - OP & Diagnostics Till ${displayDate(reportDate)}`;
+  tbody.innerHTML = getCompanyScopedCentreIndexes().map((index) => {
+    const center = centers[index];
     const cells = adminOpsMetrics.flatMap((metric) => {
       const values = center.ops?.[metric] || opRollup(index, reportDate, metric);
       return [`<td>${values.tillYesterday}</td>`, `<td>${values.today}</td>`, `<td>${values.total}</td>`];
@@ -1389,7 +1408,7 @@ function renderOpsConsolidated() {
 function renderBars() {
   const container = document.getElementById("achievementBars");
   container.innerHTML = "";
-  getAssignedCentreIndexes().forEach((i) => {
+  getCompanyScopedCentreIndexes().forEach((i) => {
     const center = centers[i];
     const percent = percentFor(center);
     const row = document.createElement("div");
@@ -1404,7 +1423,7 @@ function renderBars() {
 }
 
 function renderPayerSplit() {
-  const totals = getAssignedCentreIndexes().reduce(
+  const totals = getCompanyScopedCentreIndexes().reduce(
     (acc, i) => {
       const center = centers[i];
       acc.kasp += center.kasp;
@@ -1486,6 +1505,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
   document.body.classList.toggle("centre-mode", role === "centre");
   document.body.classList.toggle("superadmin-mode", role === "superadmin");
   document.body.classList.toggle("admin-mode", role === "admin");
+  renderCompanyTabs();
 
   if (role === "centre") {
     const centre = centers[loggedInCentreIndex];
@@ -1816,7 +1836,8 @@ function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentr
 function renderTargets() {
   const grid = document.getElementById("targetGrid");
   grid.innerHTML = "";
-  centers.forEach((center) => {
+  getCompanyScopedCentreIndexes().forEach((index) => {
+    const center = centers[index];
     const card = document.createElement("div");
     card.className = "target-card";
     card.innerHTML = `
@@ -1839,17 +1860,20 @@ function renderTargets() {
 
 function renderUsers() {
   const list = document.getElementById("userList");
-  list.innerHTML = centers.map((center, index) => `
+  list.innerHTML = getCompanyScopedCentreIndexes().map((index) => {
+    const center = centers[index];
+    return `
     <div class="user-card">
       <div>
         <strong>${center.name}</strong>
-        <span>Username and new password for centre login</span>
+        <span>${center.company || "KH"} company centre login</span>
       </div>
       <input type="text" value="${escapeHtml(center.username)}" aria-label="${center.name} username" data-user-field="username" data-center-index="${index}" />
       <input type="password" placeholder="New password" aria-label="${center.name} new password" data-user-field="password" data-center-index="${index}" />
       <button class="button secondary" data-remove-center="${index}">Remove</button>
     </div>
-  `).join("");
+  `;
+  }).join("");
 
   // Username change — plaintext, just update directly
   list.querySelectorAll("input[data-user-field='username']").forEach((input) => {
@@ -1971,6 +1995,7 @@ function addCenter() {
   if (!name) return;
   centers.push({
     name,
+    company: activeCompany,
     username: name.toLowerCase().replace(/\s+/g, ""),
     password: "1234",
     tillDate: 0,
@@ -2029,7 +2054,7 @@ function refreshCenterLists() {
   if (loginSelect) loginSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
   const exportSelect = document.getElementById("exportCentre");
   if (exportSelect) {
-    const assigned = getAssignedCentreIndexes();
+    const assigned = getCompanyScopedCentreIndexes();
     exportSelect.innerHTML = `<option value="all">All Centres</option>` +
       assigned.map(i => `<option value="${i}">${centers[i].name}</option>`).join("");
   }
@@ -3388,6 +3413,34 @@ function setImportStatus(type, message) {
     ${message}</div>`;
 }
 
+function renderCompanyTabs() {
+  const container = document.getElementById("companyTabs");
+  if (!container) return;
+  container.classList.toggle("hidden", currentRole === "centre");
+  container.querySelectorAll(".company-tab").forEach((button) => {
+    button.classList.toggle("active", button.dataset.company === activeCompany);
+  });
+}
+
+function setActiveCompany(company) {
+  activeCompany = company;
+  renderCompanyTabs();
+  refreshCenterLists();
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+  renderAdminReportPreview();
+  renderTargets();
+  renderUsers();
+  if (currentRole === "superadmin") renderAdminList();
+}
+
+function setupCompanyTabs() {
+  document.querySelectorAll(".company-tab").forEach((button) => {
+    button.addEventListener("click", () => setActiveCompany(button.dataset.company));
+  });
+}
+
 function backupStateMarkup(type, title, message) {
   return `
     <div class="backup-state ${type}">
@@ -4560,6 +4613,7 @@ async function ensureDailyBackup() {
 
 async function init() {
   const loadedState = await setupPersistence();
+  ensureCenterCompanies();
   const bootstrappedDefaults = ensureBootstrapData();
   await ensureDailyBackup();
   const hasAnyEntries = Object.keys(entries).some(
@@ -4587,6 +4641,7 @@ async function init() {
 
   setupLogin();
   setupNavigation();
+  setupCompanyTabs();
   setupEntryDate();
   setupMonthSelect();
   setupExportFilters();
@@ -4605,6 +4660,7 @@ async function init() {
   // Sync export date range to current month so To Date is never stale
   const currentMonth = today.slice(0, 7);
   syncExportDatesToMonth(currentMonth);
+  renderCompanyTabs();
   renderConsolidated();
   setReportDate(reportDate);
   renderBars();
@@ -4651,6 +4707,10 @@ function renderSuperAdminPanel() {
 function renderAdminList() {
   const container = document.getElementById("adminList");
   if (!container) return;
+  const companyCentreIndexes = centers
+    .map((center, index) => ({ center, index }))
+    .filter(({ center }) => centerMatchesActiveCompany(center))
+    .map(({ index }) => index);
 
   if (admins.length === 0) {
     container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No admin accounts yet. Add one below.</p>`;
@@ -4665,19 +4725,25 @@ function renderAdminList() {
         <span style="margin-top:4px;display:block">
           Assigned: ${
             (!admin.assignedCentres || admin.assignedCentres.length === 0)
-              ? '<em style="color:var(--muted)">All centres</em>'
-              : admin.assignedCentres.map(i => `<span class="centre-chip">${escapeHtml(centers[i]?.name || "?")}</span>`).join("")
+              ? `<em style="color:var(--muted)">All ${activeCompany} centres</em>`
+              : admin.assignedCentres
+                  .filter(i => centerMatchesActiveCompany(centers[i]))
+                  .map(i => `<span class="centre-chip">${escapeHtml(centers[i]?.name || "?")}</span>`)
+                  .join("") || `<em style="color:var(--muted)">No ${activeCompany} centres assigned</em>`
           }
         </span>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;min-width:220px">
         <input type="password" placeholder="New password" class="admin-pw-input" data-admin-idx="${idx}" />
         <div class="centre-assign-wrap">
-          ${centers.map((c, ci) => `
+          ${companyCentreIndexes.map((ci) => {
+            const c = centers[ci];
+            return `
             <button type="button" class="centre-assign-chip ${admin.assignedCentres?.includes(ci) ? "selected" : ""}" data-admin-idx="${idx}" data-centre-idx="${ci}" aria-pressed="${admin.assignedCentres?.includes(ci) ? "true" : "false"}">
               ${escapeHtml(c.name)}
             </button>
-          `).join("")}
+          `;
+          }).join("")}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="button secondary admin-save-assign-btn" data-admin-idx="${idx}">Save Centres</button>
@@ -4719,10 +4785,11 @@ function renderAdminList() {
       const card = container.querySelector(`[data-admin-idx="${idx}"].user-card`);
       const selected = [...card.querySelectorAll(".centre-assign-chip.selected")]
         .map(c => Number(c.dataset.centreIdx));
-      admins[idx].assignedCentres = selected;
+      const outsideCompany = (admins[idx].assignedCentres || []).filter(i => !centerMatchesActiveCompany(centers[i]));
+      admins[idx].assignedCentres = [...outsideCompany, ...selected];
       writeAdminAuditLog(
         "assign_centres",
-        `Updated centre assignment for admin "${admins[idx].name}": [${selected.map(i => centers[i]?.name).join(", ") || "All"}]`
+        `Updated ${activeCompany} centre assignment for admin "${admins[idx].name}": [${selected.map(i => centers[i]?.name).join(", ") || "None"}]`
       );
       saveLocalBackup();
       persistSoon();

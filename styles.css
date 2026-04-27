@@ -299,6 +299,42 @@ p { color: var(--muted); margin-top: 5px; line-height: 1.55; font-size: .875rem;
 .form-actions,
 .report-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+.company-tabs {
+  display: flex;
+  gap: 10px;
+  margin: -6px 0 20px;
+  padding: 6px;
+  border: 1px solid rgba(20,32,51,.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,.65);
+  width: fit-content;
+  box-shadow: var(--shadow-sm);
+}
+
+.company-tab {
+  min-width: 120px;
+  height: 38px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .15s;
+}
+
+.company-tab.active {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
+}
+
+.company-tab:hover {
+  color: var(--ink);
+  background: rgba(255,255,255,.72);
+}
+
 /* ─── Inputs & buttons ───────────────────────────────────────────────────── */
 select,
 input[type="text"],
@@ -970,6 +1006,9 @@ select:focus, input:focus {
   .centre-hero,
   .topbar,
   .panel-head { flex-direction: column; }
+
+  .company-tabs { width: 100%; }
+  .company-tab { flex: 1; min-width: 0; }
 
   .panel-head .legend { margin-top: 4px; }
   .snapshot-grid { grid-template-columns: repeat(2, 1fr); }
