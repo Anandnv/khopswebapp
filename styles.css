@@ -1325,3 +1325,92 @@ select:focus, input:focus {
 @media (max-width: 480px) {
   .audit-filter-grid { grid-template-columns: 1fr; }
 }
+
+/* ─── Super Admin role visibility ───────────────────────────────────────────── */
+.superadmin-only { display: none; }
+body.superadmin-mode .superadmin-only { display: flex; }
+body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admin nav */
+
+/* Role badges in audit log */
+.role-badge-superadmin {
+  font-size: .68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.role-badge-admin {
+  font-size: .68rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #e8f0fb;
+  color: #1e3a6e;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ─── Centre assignment chips ────────────────────────────────────────────────  */
+.centre-assign-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.centre-assign-chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line);
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: #f2f6fb;
+  color: var(--muted);
+  transition: background .15s, border-color .15s, color .15s;
+  user-select: none;
+}
+
+.centre-assign-chip.selected {
+  background: var(--blue-light);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.centre-assign-chip:hover {
+  border-color: var(--blue);
+}
+
+/* Centre chip (display only in admin list) */
+.centre-chip {
+  display: inline-block;
+  background: var(--blue-light);
+  color: var(--blue);
+  font-size: .72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin: 2px 2px 0 0;
+}
+
+/* ─── Super admin sidebar highlight ─────────────────────────────────────────── */
+.nav-item[data-view="superadmin"] {
+  background: linear-gradient(135deg, rgba(124,58,237,.15), rgba(37,99,235,.1));
+  color: #c4b5fd;
+  border: 1px solid rgba(124,58,237,.25);
+}
+
+.nav-item[data-view="superadmin"].active,
+.nav-item[data-view="superadmin"]:hover {
+  background: linear-gradient(135deg, rgba(124,58,237,.35), rgba(37,99,235,.2));
+  color: #fff;
+}
+
+/* ─── Login tabs (3-tab layout) ──────────────────────────────────────────────── */
+.login-tabs {
+  grid-template-columns: 1fr 1fr 1fr;
+}

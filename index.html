@@ -22,10 +22,15 @@
         <div class="login-tabs">
           <button class="login-tab active" data-login-type="centre">Centre</button>
           <button class="login-tab" data-login-type="admin">Admin</button>
+          <button class="login-tab" data-login-type="superadmin">Super Admin</button>
         </div>
         <label class="login-field centre-login-field">
           <span>Select Centre</span>
           <select id="loginCentre"></select>
+        </label>
+        <label class="login-field admin-login-field hidden">
+          <span>Username</span>
+          <input id="loginAdminUsername" type="text" placeholder="Admin username" autocomplete="username" />
         </label>
         <label class="login-field">
           <span>Password</span>
@@ -77,6 +82,9 @@
           
           <button class="nav-item admin-only" data-view="backup">
           <span>Backups</span>
+          </button>
+          <button class="nav-item superadmin-only" data-view="superadmin">
+            <span>⚙️ Super Admin</span>
           </button>
         </nav>
 
@@ -575,6 +583,78 @@
 
             <div id="auditLogList"></div>
           </section>
+        </section>
+
+        <!-- ─── Super Admin Panel ─────────────────────────────────────── -->
+        <section id="superadminView" class="view">
+
+          <!-- Admin accounts -->
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>👥 Admin Accounts</h2>
+                <p>Add, remove, and assign centres to admin users. Each admin can only see and manage their assigned centres.</p>
+              </div>
+            </div>
+            <div id="adminList"></div>
+
+            <!-- Add new admin -->
+            <div class="panel" style="margin-top:16px;background:#f8faff;border-style:dashed">
+              <h3 style="margin-bottom:12px">Add New Admin</h3>
+              <div class="filter-grid" style="grid-template-columns:repeat(3,1fr)">
+                <label>
+                  <span>Full Name</span>
+                  <input type="text" id="newAdminName" placeholder="e.g. Dr. Ramesh" />
+                </label>
+                <label>
+                  <span>Username</span>
+                  <input type="text" id="newAdminUsername" placeholder="e.g. ramesh" />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input type="password" id="newAdminPassword" placeholder="Initial password" />
+                </label>
+              </div>
+              <button class="button primary" id="addAdminBtn" style="margin-top:12px">Add Admin</button>
+            </div>
+          </section>
+
+          <!-- Admin Audit Log -->
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>🛡️ Admin Action Log</h2>
+                <p>Every action taken by admins and super admin — unlock approvals, reverts, target changes, and account changes.</p>
+              </div>
+              <button class="button secondary" id="adminAuditClearFilter">Clear Filters</button>
+            </div>
+            <div class="audit-filter-grid">
+              <label>
+                <span>Action Type</span>
+                <select id="adminAuditFilterAction">
+                  <option value="all">All Actions</option>
+                  <option value="approve_unlock">Approved Unlock</option>
+                  <option value="reject_unlock">Rejected Unlock</option>
+                  <option value="revert_entry">Reverted Entry</option>
+                  <option value="change_target">Changed Target</option>
+                  <option value="add_admin">Added Admin</option>
+                  <option value="remove_admin">Removed Admin</option>
+                  <option value="assign_centres">Assigned Centres</option>
+                  <option value="change_admin_password">Password Changed</option>
+                </select>
+              </label>
+              <label>
+                <span>From Date</span>
+                <input type="date" id="adminAuditFilterFrom" />
+              </label>
+              <label>
+                <span>To Date</span>
+                <input type="date" id="adminAuditFilterTo" />
+              </label>
+            </div>
+            <div id="adminAuditLogList"></div>
+          </section>
+
         </section>
 
       </main>

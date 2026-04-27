@@ -8,8 +8,9 @@ let centers = [
   { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 4, yesterday: 0, target: 23, cagToday: 0, cagTotal: 4, kasp: 1, general: 3, medisep: 0 }
 ];
 
-let currentRole = "admin";
+let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
+let loggedInAdminIndex = -1; // index into admins[] for regular admin; -1 = superadmin
 let loginType = "centre";
 let reportDate = new Date().toLocaleDateString('en-CA', {
   timeZone: 'Asia/Kolkata'
@@ -22,6 +23,11 @@ const entryMeta = {};
 let unlockRequests = [];
 // auditLog: array of { id, centreIndex, centreName, date, savedAt, savedBy, type, unlockRequestId, before, after }
 let auditLog = [];
+// adminAuditLog: tracks admin actions (approve/reject unlock, target change, revert, etc.)
+// { id, adminName, action, detail, centreIndexes, timestamp }
+let adminAuditLog = [];
+// admins: [{ id, name, username, passwordHash, assignedCentres: [0,1,...], createdAt }]
+let admins = [];
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -92,11 +98,11 @@ function resetAttempts() {
   saveLockout({});
 }
 
-/** Persist a lightweight session token (role + centreIndex) in sessionStorage */
-function saveSession(role, centreIndex) {
+/** Persist a lightweight session token (role + centreIndex + adminIndex) in sessionStorage */
+function saveSession(role, centreIndex, adminIndex = -1) {
   sessionStorage.setItem(
     SESSION_KEY,
-    JSON.stringify({ role, centreIndex, ts: Date.now() })
+    JSON.stringify({ role, centreIndex, adminIndex, ts: Date.now() })
   );
 }
 
@@ -161,7 +167,37 @@ function getPendingUnlock(centreIndex, date) {
   ) || null;
 }
 
-// ─── Entry metadata helpers ──────────────────────────────────────────────────
+// ─── Admin audit log helpers ─────────────────────────────────────────────────
+
+function writeAdminAuditLog(action, detail, centreIndexes = []) {
+  const actorName = currentRole === "superadmin"
+    ? "Super Admin"
+    : (admins[loggedInAdminIndex]?.name || "Admin");
+  adminAuditLog.push({
+    id: Date.now(),
+    adminName: actorName,
+    role: currentRole,
+    action,
+    detail,
+    centreIndexes,
+    timestamp: new Date().toISOString()
+  });
+  if (adminAuditLog.length > 1000) adminAuditLog.splice(0, adminAuditLog.length - 1000);
+}
+
+/** Returns the centre indexes visible to the current admin session */
+function getAssignedCentreIndexes() {
+  if (currentRole === "superadmin") return centers.map((_, i) => i);
+  if (currentRole === "admin" && loggedInAdminIndex >= 0) {
+    const admin = admins[loggedInAdminIndex];
+    if (!admin) return [];
+    if (!admin.assignedCentres || admin.assignedCentres.length === 0) return centers.map((_, i) => i);
+    return admin.assignedCentres.filter(i => i < centers.length);
+  }
+  return centers.map((_, i) => i);
+}
+
+
 
 function setEntryMeta(centreIndex, date, centreName) {
   if (!entryMeta[centreIndex]) entryMeta[centreIndex] = {};
@@ -247,6 +283,11 @@ function revertAuditEntry(auditId) {
   });
 
   setEntryMeta(log.centreIndex, log.date, "Admin (revert)");
+  writeAdminAuditLog(
+    "revert_entry",
+    `Reverted ${log.centreName} / ${displayDate(log.date)} to version from ${formatSavedAt(log.savedAt)}`,
+    [log.centreIndex]
+  );
   refreshCenterRollups(reportDate);
   renderConsolidated();
   renderBars();
@@ -272,6 +313,8 @@ function getAppState() {
     entryMeta,
     unlockRequests,
     auditLog,
+    adminAuditLog,
+    admins,
     reportDate
   };
 }
@@ -290,6 +333,8 @@ function applyAppState(state) {
   }
   if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
   if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
+  if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
+  if (Array.isArray(state.admins)) admins = state.admins;
   // Always use today — never restore a stale saved date
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   setReportDate(today);
@@ -431,6 +476,8 @@ function loadFromLocalStorage() {
     }
     if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
     if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
+    if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
+    if (Array.isArray(state.admins)) admins = state.admins;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     setReportDate(today);
     return true;
@@ -844,9 +891,12 @@ function entryPayerTotals(entry) {
 
 function getFilteredCenterIndexes() {
   if (currentRole === "centre") return [loggedInCentreIndex];
+  const assigned = getAssignedCentreIndexes();
   const value = document.getElementById("exportCentre")?.value || "all";
-  if (value === "all") return centers.map((_, index) => index);
-  return [Number(value)];
+  if (value === "all") return assigned;
+  const idx = Number(value);
+  // Only allow selecting a centre the admin is assigned to
+  return assigned.includes(idx) ? [idx] : assigned;
 }
 
 function getExportRange() {
@@ -1104,22 +1154,19 @@ function renderPendingAlert() {
   const container = document.getElementById("pendingAlert");
   if (!container) return;
 
-  // ✅ ONLY SHOW FOR ADMIN
-  if (currentRole !== "admin") {
+  if (currentRole !== "admin" && currentRole !== "superadmin") {
     container.innerHTML = "";
     return;
   }
 
-  const missing = centers.filter((_, index) => {
+  const missing = getAssignedCentreIndexes().filter((index) => {
     const entry = entries[index] && entries[index][reportDate];
-
     const hasEntry = entry && (
       Object.values(entry.op || {}).some(v => v > 0) ||
       Object.values(entry.procedures || {}).some(p =>
         Object.values(p || {}).some(v => v > 0)
       )
     );
-
     return !hasEntry;
   });
 
@@ -1132,7 +1179,7 @@ function renderPendingAlert() {
     return;
   }
 
-  const names = missing.map(c => c.name).join(", ");
+  const names = missing.map(i => centers[i].name).join(", ");
 
   container.innerHTML = `
     <div style="background:#ffe6e6;padding:12px;border-radius:8px;font-weight:700;color:#b30000">
@@ -1148,7 +1195,7 @@ function renderConsolidated() {
   document.getElementById("procedureReportTitle").textContent = `KH - Procedures Till ${displayDate(reportDate)}`;
   document.querySelector("#summaryPercent").nextElementSibling.textContent = `Till ${displayDate(reportDate)}`;
 
-  const centerIndexes = centers.map((_, index) => index);
+  const centerIndexes = getAssignedCentreIndexes();
   const tbody = document.querySelector("#consolidatedTable tbody");
   const tfoot = document.querySelector("#consolidatedTable tfoot");
   tbody.innerHTML = "";
@@ -1265,7 +1312,8 @@ function renderOpsConsolidated() {
 function renderBars() {
   const container = document.getElementById("achievementBars");
   container.innerHTML = "";
-  centers.forEach((center) => {
+  getAssignedCentreIndexes().forEach((i) => {
+    const center = centers[i];
     const percent = percentFor(center);
     const row = document.createElement("div");
     row.className = "bar-row";
@@ -1279,8 +1327,9 @@ function renderBars() {
 }
 
 function renderPayerSplit() {
-  const totals = centers.reduce(
-    (acc, center) => {
+  const totals = getAssignedCentreIndexes().reduce(
+    (acc, i) => {
+      const center = centers[i];
       acc.kasp += center.kasp;
       acc.general += center.general;
       acc.medisep += center.medisep;
@@ -1304,6 +1353,8 @@ function showView(name) {
   if (currentRole === "admin" && name === "entry") name = "admin";
   if (name === "consolidated") name = "admin"; // centre-only nav alias
   if (currentRole === "centre" && !["admin", "entry", "centre"].includes(name)) name = "admin";
+  // Superadmin-only views: block regular admin from accessing
+  if (currentRole === "admin" && name === "superadmin") name = "admin";
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.getElementById(`${name}View`).classList.add("active");
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.toggle("active", item.dataset.view === name));
@@ -1316,7 +1367,8 @@ function showView(name) {
     centre: "Centre Dashboard",
     unlock: "Edit Requests",
     audit: "Audit Log",
-    backup: "Backup & Restore"
+    backup: "Backup & Restore",
+    superadmin: "Super Admin Panel"
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
@@ -1329,7 +1381,7 @@ function showView(name) {
     if (sel) {
       const current = sel.value;
       sel.innerHTML = `<option value="all">All Centres</option>` +
-        centers.map((c, i) => `<option value="${i}">${escapeHtml(c.name)}</option>`).join("");
+        getAssignedCentreIndexes().map(i => `<option value="${i}">${escapeHtml(centers[i].name)}</option>`).join("");
       sel.value = current;
     }
     renderAuditLog();
@@ -1339,6 +1391,10 @@ function showView(name) {
     renderBackups();
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
   }
+  if (name === "superadmin") {
+    renderSuperAdminPanel();
+    setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
+  }
 }
 
 function updateTopbarActions(name) {
@@ -1346,10 +1402,13 @@ function updateTopbarActions(name) {
   document.getElementById("monthSelect").classList.toggle("hidden", currentRole === "centre");
 }
 
-function setRole(role, centreIndex = loggedInCentreIndex) {
+function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
   currentRole = role;
   loggedInCentreIndex = centreIndex;
+  loggedInAdminIndex = adminIndex;
   document.body.classList.toggle("centre-mode", role === "centre");
+  document.body.classList.toggle("superadmin-mode", role === "superadmin");
+  document.body.classList.toggle("admin-mode", role === "admin");
 
   if (role === "centre") {
     const centre = centers[loggedInCentreIndex];
@@ -1367,9 +1426,28 @@ function setRole(role, centreIndex = loggedInCentreIndex) {
     return;
   }
 
-  document.getElementById("signedInName").textContent = "Admin User";
-  document.getElementById("signedInAccess").textContent = "Full centre access, view only";
+  if (role === "superadmin") {
+    document.getElementById("signedInName").textContent = "Super Admin";
+    document.getElementById("signedInAccess").textContent = "Full system control";
+    document.getElementById("exportCentre").disabled = false;
+    refreshCenterLists();
+    renderConsolidated();
+    renderAdminReportPreview();
+    showView("admin");
+    return;
+  }
+
+  // Regular admin
+  const admin = admins[adminIndex];
+  const adminLabel = admin ? admin.name : "Admin User";
+  const assigned = getAssignedCentreIndexes();
+  document.getElementById("signedInName").textContent = adminLabel;
+  document.getElementById("signedInAccess").textContent =
+    admin && admin.assignedCentres?.length
+      ? `Assigned: ${admin.assignedCentres.map(i => centers[i]?.name).filter(Boolean).join(", ")}`
+      : "All centres";
   document.getElementById("exportCentre").disabled = false;
+  refreshCenterLists();
   renderConsolidated();
   renderAdminReportPreview();
   showView("admin");
@@ -1670,7 +1748,9 @@ function renderTargets() {
     `;
     const input = card.querySelector("input");
     input.addEventListener("input", () => {
+      const oldTarget = center.target;
       center.target = currencySafeNumber(input.value);
+      logTargetChange(center.name, oldTarget, center.target);
       renderConsolidated();
       renderBars();
       renderAdminReportPreview();
@@ -1871,7 +1951,11 @@ function refreshCenterLists() {
   const loginSelect = document.getElementById("loginCentre");
   if (loginSelect) loginSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
   const exportSelect = document.getElementById("exportCentre");
-  if (exportSelect) exportSelect.innerHTML = `<option value="all">All Centres</option>` + centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+  if (exportSelect) {
+    const assigned = getAssignedCentreIndexes();
+    exportSelect.innerHTML = `<option value="all">All Centres</option>` +
+      assigned.map(i => `<option value="${i}">${centers[i].name}</option>`).join("");
+  }
   if (currentRole === "centre" && exportSelect) {
     exportSelect.value = String(loggedInCentreIndex);
     exportSelect.disabled = true;
@@ -1936,7 +2020,8 @@ function setupLogin() {
     tab.addEventListener("click", () => {
       loginType = tab.dataset.loginType;
       document.querySelectorAll(".login-tab").forEach((item) => item.classList.toggle("active", item === tab));
-      document.querySelector(".centre-login-field").classList.toggle("hidden", loginType === "admin");
+      document.querySelector(".centre-login-field").classList.toggle("hidden", loginType !== "centre");
+      document.querySelector(".admin-login-field").classList.toggle("hidden", loginType !== "admin");
       document.getElementById("loginPassword").value = "";
       document.getElementById("loginError").textContent = "";
     });
@@ -2642,27 +2727,69 @@ async function login() {
   const centreIndex = Number(document.getElementById("loginCentre").value);
   error.textContent = "";
 
+  // ── Super Admin ──
+  if (loginType === "superadmin") {
+    const superHash = CONFIG.superAdminPasswordHash || await sha256("superadmin123");
+    if (passwordHash !== superHash) {
+      recordFailedAttempt();
+      const remaining = lockoutSecondsLeft();
+      error.textContent = remaining > 0
+        ? `Too many failed attempts. Locked for ${remaining}s.`
+        : "Invalid super admin password.";
+      return;
+    }
+    resetAttempts();
+    saveSession("superadmin", -1, -1);
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("appShell").classList.remove("hidden");
+    setRole("superadmin");
+    return;
+  }
+
+  // ── Admin (by username + password) ──
   if (loginType === "admin") {
-    // Admin hash lives in CONFIG so it's never in app.js source
+    const adminUsername = document.getElementById("loginAdminUsername")?.value?.trim() || "";
+
+    // First check if it's a named admin account
+    const matchedAdminIdx = admins.findIndex(a => a.username === adminUsername);
+    if (matchedAdminIdx >= 0) {
+      const admin = admins[matchedAdminIdx];
+      const storedHash = admin.passwordHash || await sha256(admin.password || "");
+      if (passwordHash !== storedHash) {
+        recordFailedAttempt();
+        const remaining = lockoutSecondsLeft();
+        error.textContent = remaining > 0
+          ? `Too many failed attempts. Locked for ${remaining}s.`
+          : "Invalid admin password.";
+        return;
+      }
+      resetAttempts();
+      saveSession("admin", -1, matchedAdminIdx);
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+      setRole("admin", -1, matchedAdminIdx);
+      return;
+    }
+
+    // Legacy: single admin password from CONFIG (no username match needed)
     const adminHash = CONFIG.adminPasswordHash || await sha256("admin123");
     if (passwordHash !== adminHash) {
       recordFailedAttempt();
       const remaining = lockoutSecondsLeft();
       error.textContent = remaining > 0
         ? `Too many failed attempts. Locked for ${remaining}s.`
-        : "Invalid admin password.";
+        : "Invalid admin credentials.";
       return;
     }
     resetAttempts();
-    saveSession("admin", -1);
+    saveSession("admin", -1, -1);
     document.getElementById("loginScreen").classList.add("hidden");
     document.getElementById("appShell").classList.remove("hidden");
-    setRole("admin");
+    setRole("admin", -1, -1);
     return;
   }
 
-  // Centre login — compare against stored hash (falls back gracefully if
-  // the password field still holds a plaintext legacy value during migration)
+  // ── Centre login ──
   const centre = centers[centreIndex];
   const storedCredential = centre.passwordHash || await sha256(centre.password || "");
   if (passwordHash !== storedCredential) {
@@ -2707,7 +2834,8 @@ function renderAuditLog() {
   const filterFrom   = document.getElementById("auditFilterFrom")?.value   || "";
   const filterTo     = document.getElementById("auditFilterTo")?.value     || "";
 
-  let logs = [...auditLog].reverse(); // newest first
+  const assigned = getAssignedCentreIndexes();
+  let logs = [...auditLog].reverse().filter(l => assigned.includes(l.centreIndex) || l.centreIndex === -1); // newest first
 
   if (filterCentre !== "all") logs = logs.filter(l => l.centreIndex === Number(filterCentre));
   if (filterType   !== "all") logs = logs.filter(l => l.type === filterType);
@@ -2889,8 +3017,10 @@ function renderUnlockRequests() {
   });
   if (dirty) persistSoon();
 
-  const pending  = unlockRequests.filter(r => r.status === "pending");
-  const resolved = unlockRequests.filter(r => r.status !== "pending").slice(-20).reverse();
+  const assigned = getAssignedCentreIndexes();
+  const visibleRequests = unlockRequests.filter(r => assigned.includes(r.centreIndex));
+  const pending  = visibleRequests.filter(r => r.status === "pending");
+  const resolved = visibleRequests.filter(r => r.status !== "pending").slice(-20).reverse();
 
   // Update nav badge — count pending only
   const badge = document.getElementById("unlockNavBadge");
@@ -2984,6 +3114,15 @@ function resolveUnlock(id, status, durationMins = 0) {
   if (status === "approved" && durationMins > 0) {
     req.expiresAt = new Date(Date.now() + durationMins * 60 * 1000).toISOString();
   }
+  // Log admin action
+  const durationLabel = durationMins >= 60 ? durationMins / 60 + "h" : durationMins + "min";
+  writeAdminAuditLog(
+    status === "approved" ? "approve_unlock" : "reject_unlock",
+    status === "approved"
+      ? `Approved unlock for ${req.centreName} / ${displayDate(req.date)} (${durationLabel}). Reason: "${req.reason}"`
+      : `Rejected unlock for ${req.centreName} / ${displayDate(req.date)}. Reason: "${req.reason}"`,
+    [req.centreIndex]
+  );
   saveLocalBackup();
   if (supabaseClient) saveOneUnlockRequest(req).catch(console.error);
   renderUnlockRequests();
@@ -3340,7 +3479,7 @@ async function init() {
 
  // Auto refresh for requests
   setInterval(() => {
-  if (currentRole === "admin") {
+  if (currentRole === "admin" || currentRole === "superadmin") {
     renderUnlockRequests();
     renderPendingAlert();
     renderConsolidated();
@@ -3357,6 +3496,7 @@ async function init() {
   setupExportFilters();
   setupExportMenus();
   setupAdminControls();
+  setupSuperAdminControls();
 
   // Ensure entry date input always starts on today
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -3383,10 +3523,14 @@ async function init() {
   // Restore session if the tab is still open (sessionStorage survives refresh)
   const session = loadSession();
   if (session) {
-    if (session.role === "admin") {
+    if (session.role === "superadmin") {
       document.getElementById("loginScreen").classList.add("hidden");
       document.getElementById("appShell").classList.remove("hidden");
-      setRole("admin");
+      setRole("superadmin");
+    } else if (session.role === "admin") {
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+      setRole("admin", -1, session.adminIndex ?? -1);
     } else if (session.role === "centre" && centers[session.centreIndex]) {
       document.getElementById("loginScreen").classList.add("hidden");
       document.getElementById("appShell").classList.remove("hidden");
@@ -3396,6 +3540,219 @@ async function init() {
  // Backup and restore — daily check runs every hour
   setInterval(ensureDailyBackup, 3600000);
 
+}
+
+// ─── Super Admin Panel ───────────────────────────────────────────────────────
+
+function renderSuperAdminPanel() {
+  renderAdminList();
+  renderAdminAuditLog();
+}
+
+function renderAdminList() {
+  const container = document.getElementById("adminList");
+  if (!container) return;
+
+  if (admins.length === 0) {
+    container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No admin accounts yet. Add one below.</p>`;
+    return;
+  }
+
+  container.innerHTML = admins.map((admin, idx) => `
+    <div class="user-card" data-admin-idx="${idx}">
+      <div>
+        <strong>${escapeHtml(admin.name)}</strong>
+        <span>Username: ${escapeHtml(admin.username)} · Created ${formatSavedAt(admin.createdAt)}</span>
+        <span style="margin-top:4px;display:block">
+          Assigned: ${
+            (!admin.assignedCentres || admin.assignedCentres.length === 0)
+              ? '<em style="color:var(--muted)">All centres</em>'
+              : admin.assignedCentres.map(i => `<span class="centre-chip">${escapeHtml(centers[i]?.name || "?")}</span>`).join("")
+          }
+        </span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:220px">
+        <input type="password" placeholder="New password" class="admin-pw-input" data-admin-idx="${idx}" />
+        <div class="centre-assign-wrap">
+          ${centers.map((c, ci) => `
+            <label class="centre-assign-chip ${admin.assignedCentres?.includes(ci) ? "selected" : ""}" data-admin-idx="${idx}" data-centre-idx="${ci}">
+              <input type="checkbox" ${admin.assignedCentres?.includes(ci) ? "checked" : ""} style="display:none" />
+              ${escapeHtml(c.name)}
+            </label>
+          `).join("")}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="button secondary admin-save-assign-btn" data-admin-idx="${idx}">Save Centres</button>
+          <button class="button secondary admin-remove-btn" data-admin-idx="${idx}" style="color:var(--red)">Remove</button>
+        </div>
+      </div>
+    </div>
+  `).join("");
+
+  // Password change
+  container.querySelectorAll(".admin-pw-input").forEach(input => {
+    input.addEventListener("change", async () => {
+      const raw = input.value.trim();
+      if (!raw) return;
+      const idx = Number(input.dataset.adminIdx);
+      admins[idx].passwordHash = await sha256(raw);
+      delete admins[idx].password;
+      input.value = "";
+      saveLocalBackup();
+      persistSoon();
+      writeAdminAuditLog("change_admin_password", `Changed password for admin "${admins[idx].name}"`);
+      showToast(`Password updated for ${admins[idx].name}`);
+    });
+  });
+
+  // Centre chip toggle (visual only)
+  container.querySelectorAll(".centre-assign-chip").forEach(chip => {
+    chip.addEventListener("click", () => {
+      chip.classList.toggle("selected");
+      chip.querySelector("input").checked = chip.classList.contains("selected");
+    });
+  });
+
+  // Save centre assignments
+  container.querySelectorAll(".admin-save-assign-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.adminIdx);
+      const card = container.querySelector(`[data-admin-idx="${idx}"].user-card`);
+      const selected = [...card.querySelectorAll(".centre-assign-chip.selected")]
+        .map(c => Number(c.dataset.centreIdx));
+      admins[idx].assignedCentres = selected;
+      writeAdminAuditLog(
+        "assign_centres",
+        `Updated centre assignment for admin "${admins[idx].name}": [${selected.map(i => centers[i]?.name).join(", ") || "All"}]`
+      );
+      saveLocalBackup();
+      persistSoon();
+      renderAdminList();
+      showToast(`Centre assignment saved for ${admins[idx].name}`);
+    });
+  });
+
+  // Remove admin
+  container.querySelectorAll(".admin-remove-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.adminIdx);
+      const name = admins[idx].name;
+      if (!confirm(`Remove admin "${name}"? They will no longer be able to log in.`)) return;
+      writeAdminAuditLog("remove_admin", `Removed admin account "${name}"`);
+      admins.splice(idx, 1);
+      saveLocalBackup();
+      persistSoon();
+      renderAdminList();
+      showToast(`Admin "${name}" removed`);
+    });
+  });
+}
+
+function addAdmin() {
+  const nameInput    = document.getElementById("newAdminName");
+  const userInput    = document.getElementById("newAdminUsername");
+  const pwInput      = document.getElementById("newAdminPassword");
+  const name     = nameInput.value.trim();
+  const username = userInput.value.trim().toLowerCase().replace(/\s+/g, "");
+  const password = pwInput.value.trim();
+
+  if (!name || !username || !password) {
+    showToast("Please fill in name, username, and password.");
+    return;
+  }
+  if (admins.some(a => a.username === username)) {
+    showToast("Username already taken.");
+    return;
+  }
+
+  sha256(password).then(hash => {
+    admins.push({
+      id: Date.now(),
+      name,
+      username,
+      passwordHash: hash,
+      assignedCentres: [],
+      createdAt: new Date().toISOString()
+    });
+    nameInput.value = "";
+    userInput.value = "";
+    pwInput.value = "";
+    writeAdminAuditLog("add_admin", `Added new admin account "${name}" (username: ${username})`);
+    saveLocalBackup();
+    persistSoon();
+    renderAdminList();
+    showToast(`Admin "${name}" added`);
+  });
+}
+
+function renderAdminAuditLog() {
+  const container = document.getElementById("adminAuditLogList");
+  if (!container) return;
+
+  const filterAction = document.getElementById("adminAuditFilterAction")?.value || "all";
+  const filterFrom   = document.getElementById("adminAuditFilterFrom")?.value   || "";
+  const filterTo     = document.getElementById("adminAuditFilterTo")?.value     || "";
+
+  let logs = [...adminAuditLog].reverse();
+  if (filterAction !== "all") logs = logs.filter(l => l.action === filterAction);
+  if (filterFrom)             logs = logs.filter(l => l.timestamp >= filterFrom);
+  if (filterTo)               logs = logs.filter(l => l.timestamp.slice(0,10) <= filterTo);
+
+  if (logs.length === 0) {
+    container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No admin actions recorded yet.</p>`;
+    return;
+  }
+
+  const actionBadgeMap = {
+    approve_unlock:        ["audit-badge-unlock",  "Approved Unlock"],
+    reject_unlock:         ["audit-badge-revert",  "Rejected Unlock"],
+    revert_entry:          ["audit-badge-revert",  "Reverted Entry"],
+    add_admin:             ["audit-badge-normal",  "Added Admin"],
+    remove_admin:          ["audit-badge-revert",  "Removed Admin"],
+    assign_centres:        ["audit-badge-normal",  "Assigned Centres"],
+    change_admin_password: ["audit-badge-normal",  "Password Changed"],
+  };
+
+  container.innerHTML = logs.map(log => {
+    const [cls, label] = actionBadgeMap[log.action] || ["audit-badge-normal", log.action];
+    return `
+      <div class="audit-card">
+        <div class="audit-card-head">
+          <div class="audit-card-title">
+            <strong>${escapeHtml(log.adminName)}</strong>
+            <span class="audit-date-tag">${new Date(log.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</span>
+            <span class="audit-badge ${cls}">${label}</span>
+            ${log.role === "superadmin" ? `<span class="role-badge-superadmin">Super Admin</span>` : `<span class="role-badge-admin">Admin</span>`}
+          </div>
+        </div>
+        <p style="color:var(--ink);font-size:.875rem;margin:6px 0 0">${escapeHtml(log.detail)}</p>
+      </div>`;
+  }).join("");
+}
+
+function setupSuperAdminControls() {
+  document.getElementById("addAdminBtn")?.addEventListener("click", addAdmin);
+  document.getElementById("newAdminPassword")?.addEventListener("keydown", e => {
+    if (e.key === "Enter") addAdmin();
+  });
+  ["adminAuditFilterAction", "adminAuditFilterFrom", "adminAuditFilterTo"].forEach(id => {
+    document.getElementById(id)?.addEventListener("change", renderAdminAuditLog);
+  });
+  document.getElementById("adminAuditClearFilter")?.addEventListener("click", () => {
+    document.getElementById("adminAuditFilterAction").value = "all";
+    document.getElementById("adminAuditFilterFrom").value = "";
+    document.getElementById("adminAuditFilterTo").value = "";
+    renderAdminAuditLog();
+  });
+}
+
+// Log admin target changes
+function logTargetChange(centreName, oldTarget, newTarget) {
+  writeAdminAuditLog(
+    "change_target",
+    `Changed target for "${centreName}" from ${oldTarget} → ${newTarget}`,
+    [centers.findIndex(c => c.name === centreName)]
+  );
 }
 
 init();
