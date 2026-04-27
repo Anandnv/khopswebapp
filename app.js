@@ -356,7 +356,10 @@ async function loadPersistedState() {
   if (supabaseClient) {
     try {
       const ok = await loadFromSupabase();
-      if (ok) return true;
+      if (ok) {
+        mergeLocalSupplementalState();
+        return true;
+      }
       console.warn("Supabase load failed or empty — falling back to localStorage");
     } catch (err) {
       console.warn("Supabase load threw:", err);
@@ -366,10 +369,10 @@ async function loadPersistedState() {
 }
 
 async function loadFromSupabase() {
-  // 1. App config (centers + procedures)
+  // 1. App config (centers + procedures + admin state when available)
   const { data: cfg, error: cfgErr } = await supabaseClient
     .from("app_config")
-    .select("centers, procedures")
+    .select("*")
     .eq("id", "main")
     .maybeSingle();
 
@@ -377,6 +380,8 @@ async function loadFromSupabase() {
 
   centers = cfg.centers || centers;
   procedureSettings = cfg.procedures || procedureSettings;
+  if (Array.isArray(cfg.admins)) admins = cfg.admins;
+  if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
 
   // 2. Daily entries → rebuild nested entries object
   const { data: rows, error: rowsErr } = await supabaseClient
@@ -457,6 +462,22 @@ async function loadFromSupabase() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   setReportDate(today);
   return true;
+}
+
+function mergeLocalSupplementalState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return;
+  try {
+    const state = JSON.parse(saved);
+    if ((!Array.isArray(admins) || admins.length === 0) && Array.isArray(state.admins) && state.admins.length) {
+      admins = state.admins;
+    }
+    if ((!Array.isArray(adminAuditLog) || adminAuditLog.length === 0) && Array.isArray(state.adminAuditLog) && state.adminAuditLog.length) {
+      adminAuditLog = state.adminAuditLog;
+    }
+  } catch (err) {
+    console.warn("Could not merge local supplemental state:", err);
+  }
 }
 
 function loadFromLocalStorage() {
@@ -544,9 +565,34 @@ function saveLocalBackup() {
 }
 
 async function saveConfig() {
-  const { error } = await supabaseClient
+  const payload = {
+    id: "main",
+    centers,
+    procedures: procedureSettings,
+    admins,
+    admin_audit_log: adminAuditLog,
+    updated_at: new Date().toISOString()
+  };
+
+  let { error } = await supabaseClient
     .from("app_config")
-    .upsert({ id: "main", centers, procedures: procedureSettings, updated_at: new Date().toISOString() });
+    .upsert(payload);
+
+  // Backward-compatible fallback for older schemas that do not yet have admin columns.
+  if (error && /admins|admin_audit_log/i.test(error.message || "")) {
+    ({ error } = await supabaseClient
+      .from("app_config")
+      .upsert({
+        id: "main",
+        centers,
+        procedures: procedureSettings,
+        updated_at: new Date().toISOString()
+      }));
+    if (!error) {
+      console.warn("Supabase app_config is missing admin columns. Admins are only safe in local backup until schema.sql is re-run.");
+    }
+  }
+
   if (error) throw error;
 }
 

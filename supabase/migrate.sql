@@ -5,17 +5,21 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── 1. App config ─────────────────────────────────────────────────────────────
-insert into app_config (id, centers, procedures, updated_at)
+insert into app_config (id, centers, procedures, admins, admin_audit_log, updated_at)
 select
   'main',
   (state -> 'centers'),
   (state -> 'procedureSettings'),
+  coalesce((state -> 'admins'), '[]'::jsonb),
+  coalesce((state -> 'adminAuditLog'), '[]'::jsonb),
   now()
 from app_state
 where id = 'main'
 on conflict (id) do update
   set centers    = excluded.centers,
       procedures = excluded.procedures,
+      admins = excluded.admins,
+      admin_audit_log = excluded.admin_audit_log,
       updated_at = excluded.updated_at;
 
 -- ── 2. Daily entries ───────────────────────────────────────────────────────────
