@@ -1398,6 +1398,84 @@ body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admi
   margin: 2px 2px 0 0;
 }
 
+/* ─── Backup comparison ───────────────────────────────────────────────────── */
+.backup-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.backup-compare-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
+.backup-compare-card span {
+  display: block;
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.backup-compare-card strong {
+  display: block;
+  font-size: 1.5rem;
+  margin-top: 8px;
+}
+
+.backup-compare-delta {
+  margin-top: 8px;
+  font-size: .85rem;
+  font-weight: 700;
+}
+
+.backup-compare-up {
+  color: var(--green);
+}
+
+.backup-compare-down {
+  color: var(--red);
+}
+
+.backup-compare-section {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.backup-compare-section summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  background: #eef3f8;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.backup-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.backup-compare-table th,
+.backup-compare-table td {
+  border-top: 1px solid var(--line);
+  padding: 10px 12px;
+  text-align: left;
+  font-size: .86rem;
+}
+
+.backup-compare-table th {
+  background: #f9fbfd;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: .72rem;
+}
+
 /* ─── Super admin sidebar highlight ─────────────────────────────────────────── */
 .nav-item[data-view="superadmin"] {
   background: linear-gradient(135deg, rgba(124,58,237,.15), rgba(37,99,235,.1));

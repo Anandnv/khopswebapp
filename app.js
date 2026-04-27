@@ -3437,7 +3437,7 @@ async function cleanupBackups() {
 async function loadBackups() {
   const { data, error } = await supabaseClient
     .from("app_backups")
-    .select("id, created_at")
+    .select("id, created_at, created_by")
     .order("created_at", { ascending: false })
     .limit(30);
 
@@ -3447,6 +3447,155 @@ async function loadBackups() {
   }
 
   return data;
+}
+
+function countDailyEntries(state) {
+  return Object.values(state?.entries || {}).reduce((count, centreEntries) => {
+    return count + Object.keys(centreEntries || {}).length;
+  }, 0);
+}
+
+function countAuditEntries(state) {
+  return Array.isArray(state?.auditLog) ? state.auditLog.length : 0;
+}
+
+function countAdmins(state) {
+  return Array.isArray(state?.admins) ? state.admins.length : 0;
+}
+
+function buildComparisonRows(currentList, backupList, keyField = "name") {
+  const currentMap = new Map((currentList || []).map((item) => [item?.[keyField], item]));
+  const backupMap = new Map((backupList || []).map((item) => [item?.[keyField], item]));
+  const keys = [...new Set([...currentMap.keys(), ...backupMap.keys()])].filter(Boolean).sort();
+  return keys.map((key) => ({
+    key,
+    current: currentMap.has(key),
+    backup: backupMap.has(key)
+  }));
+}
+
+function deltaClass(delta) {
+  if (delta > 0) return "backup-compare-up";
+  if (delta < 0) return "backup-compare-down";
+  return "";
+}
+
+function deltaLabel(delta) {
+  if (delta > 0) return `+${delta}`;
+  if (delta < 0) return `${delta}`;
+  return "No change";
+}
+
+function renderBackupComparison(backupMeta, backupState) {
+  const currentState = getAppState();
+  const preview = document.getElementById("backupComparePreview");
+  if (!preview) return;
+
+  const currentEntryCount = countDailyEntries(currentState);
+  const backupEntryCount = countDailyEntries(backupState);
+  const currentAuditCount = countAuditEntries(currentState);
+  const backupAuditCount = countAuditEntries(backupState);
+  const currentAdminCount = countAdmins(currentState);
+  const backupAdminCount = countAdmins(backupState);
+
+  const centreRows = buildComparisonRows(currentState.centers, backupState.centers, "name");
+  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name");
+  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username");
+
+  const section = (title, rows, currentLabel, backupLabel) => `
+    <details class="backup-compare-section">
+      <summary>${title}</summary>
+      <table class="backup-compare-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>${currentLabel}</th>
+            <th>${backupLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td>${row.current ? "Present" : "Missing"}</td>
+                  <td>${row.backup ? "Present" : "Missing"}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="3">No items to compare.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+
+  preview.innerHTML = `
+    <div class="backup-compare-grid">
+      <div class="backup-compare-card">
+        <span>Daily Entries</span>
+        <strong>${backupEntryCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupEntryCount - currentEntryCount)}">
+          Current ${currentEntryCount} | Delta ${deltaLabel(backupEntryCount - currentEntryCount)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Audit Records</span>
+        <strong>${backupAuditCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupAuditCount - currentAuditCount)}">
+          Current ${currentAuditCount} | Delta ${deltaLabel(backupAuditCount - currentAuditCount)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Admin Accounts</span>
+        <strong>${backupAdminCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupAdminCount - currentAdminCount)}">
+          Current ${currentAdminCount} | Delta ${deltaLabel(backupAdminCount - currentAdminCount)}
+        </div>
+      </div>
+    </div>
+    <p style="margin:0 0 8px;color:var(--muted)">
+      Comparing current live state against backup <strong>#${backupMeta.id}</strong> created
+      ${new Date(backupMeta.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+      ${backupMeta.created_by ? `by ${escapeHtml(backupMeta.created_by)}` : ""}.
+    </p>
+    ${section("Centres", centreRows, "Current", "Backup")}
+    ${section("Procedures", procedureRows, "Current", "Backup")}
+    ${section("Admin Accounts", adminRows, "Current", "Backup")}
+  `;
+}
+
+async function compareBackup(backupId) {
+  if (!supabaseClient) {
+    showToast("No database connection");
+    return;
+  }
+  const preview = document.getElementById("backupComparePreview");
+  if (preview) {
+    preview.innerHTML = `<p style="color:var(--muted)">Loading comparison...</p>`;
+  }
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("id, created_at, created_by, backup_data")
+    .eq("id", backupId)
+    .single();
+
+  if (error || !data) {
+    if (preview) {
+      preview.innerHTML = `<p style="color:var(--red)">Could not load backup comparison.</p>`;
+    }
+    showToast("❌ Could not compare backup");
+    return;
+  }
+
+  renderBackupComparison(data, data.backup_data || {});
+  showToast(`Compared backup #${backupId}`);
+}
+
+function clearBackupComparison() {
+  const preview = document.getElementById("backupComparePreview");
+  if (!preview) return;
+  preview.innerHTML = `<p style="color:var(--muted)">Choose “Compare” on any backup to inspect before-vs-after differences.</p>`;
 }
 
 // Restore backup
@@ -3504,9 +3653,10 @@ async function renderBackups() {
       <div class="unlock-card-head">
         <div>
           <strong>${new Date(b.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</strong>
-          <span style="font-size:12px;color:var(--muted)">Backup ID: ${b.id}</span>
+          <span style="font-size:12px;color:var(--muted)">Backup ID: ${b.id}${b.created_by ? ` · By ${escapeHtml(b.created_by)}` : ""}</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="button secondary" onclick="compareBackup(${b.id})">🔥 Compare</button>
           <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
           <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
         </div>
@@ -3561,6 +3711,7 @@ async function init() {
   setupExportMenus();
   setupAdminControls();
   setupSuperAdminControls();
+  document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
 
   // Ensure entry date input always starts on today
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
