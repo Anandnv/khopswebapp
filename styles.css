@@ -1476,6 +1476,58 @@ body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admi
   font-size: .72rem;
 }
 
+.backup-feedback {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--ink);
+  font-size: .88rem;
+}
+
+.backup-feedback strong,
+.backup-state strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: .9rem;
+}
+
+.backup-feedback.loading,
+.backup-state.loading {
+  background: var(--blue-light);
+  border-color: #bfd1ff;
+  color: #1e3a6e;
+}
+
+.backup-feedback.success,
+.backup-state.success {
+  background: var(--green-light);
+  border-color: #b9dfc5;
+  color: #17603a;
+}
+
+.backup-feedback.error,
+.backup-state.error {
+  background: var(--red-light);
+  border-color: #f0b7bf;
+  color: #9f2130;
+}
+
+.backup-feedback.empty,
+.backup-state.empty {
+  background: #f8fafc;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.backup-state {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: #fbfdff;
+}
+
 /* ─── Super admin sidebar highlight ─────────────────────────────────────────── */
 .nav-item[data-view="superadmin"] {
   background: linear-gradient(135deg, rgba(124,58,237,.15), rgba(37,99,235,.1));

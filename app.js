@@ -3397,16 +3397,35 @@ function setImportStatus(type, message) {
     ${message}</div>`;
 }
 
+function backupStateMarkup(type, title, message) {
+  return `
+    <div class="backup-state ${type}">
+      <strong>${escapeHtml(title)}</strong>
+      <div>${message}</div>
+    </div>
+  `;
+}
+
+function setBackupStatus(type, title, message = "") {
+  const el = document.getElementById("backupStatus");
+  if (!el) return;
+  el.className = `backup-feedback ${type}`;
+  el.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    ${message ? `<div>${message}</div>` : ""}
+  `;
+}
+
+function setPanelState(elementId, type, title, message) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.innerHTML = backupStateMarkup(type, title, message);
+}
+
 
 async function createBackup() {
   if (!supabaseClient) return;
-
-  const el = document.getElementById("backupStatus");
-
-  // 👉 SHOW LOADING
-  if (el) {
-    el.textContent = "⏳ Backing up...";
-  }
+  setBackupStatus("loading", "Creating backup", "Saving the current live state to Supabase.");
 
   const data = getAppState();
 
@@ -3424,18 +3443,15 @@ async function createBackup() {
 
     console.log("Backup created");
 
-    // 👉 SHOW SUCCESS
-    if (el) {
-      el.textContent = "✅ Last backup: " + new Date().toLocaleString() + ` by ${createdBy}`;
-    }
+    setBackupStatus(
+      "success",
+      "Backup created",
+      `Last backup saved ${new Date().toLocaleString()} by ${escapeHtml(createdBy)}.`
+    );
 
   } catch (err) {
     console.error("Backup failed", err);
-
-    // 👉 SHOW ERROR
-    if (el) {
-      el.textContent = "❌ Backup failed";
-    }
+    setBackupStatus("error", "Backup failed", "Supabase could not save the snapshot right now.");
   }
 }
 
@@ -3467,8 +3483,7 @@ async function loadBackups() {
     .limit(30);
 
   if (error) {
-    console.error(error);
-    return [];
+    throw error;
   }
 
   return data;
@@ -3485,10 +3500,7 @@ async function deleteBackup(backupId) {
   );
   if (!ok) return;
 
-  const status = document.getElementById("backupStatus");
-  if (status) {
-    status.textContent = `⏳ Deleting backup #${backupId}...`;
-  }
+  setBackupStatus("loading", `Deleting backup #${backupId}`, "Removing the selected cloud snapshot.");
 
   const { error } = await supabaseClient
     .from("app_backups")
@@ -3497,9 +3509,7 @@ async function deleteBackup(backupId) {
 
   if (error) {
     console.error(error);
-    if (status) {
-      status.textContent = `❌ Failed to delete backup #${backupId}`;
-    }
+    setBackupStatus("error", `Delete failed for backup #${backupId}`, "The backup could not be removed from Supabase.");
     showToast("Could not delete backup");
     return;
   }
@@ -3510,9 +3520,7 @@ async function deleteBackup(backupId) {
   if (compareHtml.includes(`Backup #${backupId}`)) clearBackupComparison();
   if (restoreHtml.includes(`Backup #${backupId}`)) clearRestorePreview();
 
-  if (status) {
-    status.textContent = `✅ Deleted backup #${backupId}`;
-  }
+  setBackupStatus("success", `Deleted backup #${backupId}`, "The cloud snapshot was removed. Live app data is unchanged.");
 
   await renderBackups();
   showToast(`Deleted backup #${backupId}`);
@@ -3639,10 +3647,7 @@ async function compareBackup(backupId) {
     showToast("No database connection");
     return;
   }
-  const preview = document.getElementById("backupComparePreview");
-  if (preview) {
-    preview.innerHTML = `<p style="color:var(--muted)">Loading comparison...</p>`;
-  }
+  setPanelState("backupComparePreview", "loading", "Loading comparison", "Reading the selected backup and comparing it with the current live state.");
   const { data, error } = await supabaseClient
     .from("app_backups")
     .select("id, created_at, created_by, backup_data")
@@ -3650,9 +3655,7 @@ async function compareBackup(backupId) {
     .single();
 
   if (error || !data) {
-    if (preview) {
-      preview.innerHTML = `<p style="color:var(--red)">Could not load backup comparison.</p>`;
-    }
+    setPanelState("backupComparePreview", "error", "Comparison unavailable", "The selected backup could not be loaded for comparison.");
     showToast("❌ Could not compare backup");
     return;
   }
@@ -3664,7 +3667,7 @@ async function compareBackup(backupId) {
 function clearBackupComparison() {
   const preview = document.getElementById("backupComparePreview");
   if (!preview) return;
-  preview.innerHTML = `<p style="color:var(--muted)">Choose “Compare” on any backup to inspect before-vs-after differences.</p>`;
+  preview.innerHTML = backupStateMarkup("empty", "No comparison selected", "Choose “Compare” on any backup to inspect before-vs-after differences.");
 }
 
 function renderRestorePreview(backupMeta, backupState) {
@@ -3788,10 +3791,7 @@ async function previewRestore(backupId) {
     showToast("No database connection");
     return;
   }
-  const panel = document.getElementById("restorePreviewPanel");
-  if (panel) {
-    panel.innerHTML = `<p style="color:var(--muted)">Loading restore preview...</p>`;
-  }
+  setPanelState("restorePreviewPanel", "loading", "Loading restore preview", "Calculating what this restore would overwrite.");
   const { data, error } = await supabaseClient
     .from("app_backups")
     .select("id, created_at, created_by, backup_data")
@@ -3799,9 +3799,7 @@ async function previewRestore(backupId) {
     .single();
 
   if (error || !data) {
-    if (panel) {
-      panel.innerHTML = `<p style="color:var(--red)">Could not load restore preview.</p>`;
-    }
+    setPanelState("restorePreviewPanel", "error", "Restore preview unavailable", "The selected backup could not be loaded for preview.");
     showToast("❌ Could not preview restore");
     return;
   }
@@ -3813,7 +3811,7 @@ async function previewRestore(backupId) {
 function clearRestorePreview() {
   const panel = document.getElementById("restorePreviewPanel");
   if (!panel) return;
-  panel.innerHTML = `<p style="color:var(--muted)">Choose “Preview Restore” on any backup to inspect what would be restored.</p>`;
+  panel.innerHTML = backupStateMarkup("empty", "No restore preview selected", "Choose “Preview Restore” on any backup to inspect what would be restored.");
 }
 
 function countCentreEntryDates(state, centreIndex) {
@@ -3837,7 +3835,7 @@ function clearPartialRestore() {
   partialRestoreContext = null;
   const panel = document.getElementById("partialRestorePanel");
   if (!panel) return;
-  panel.innerHTML = `<p style="color:var(--muted)">Choose “Partial Restore” on any backup to load a single-centre restore option.</p>`;
+  panel.innerHTML = backupStateMarkup("empty", "No centre restore selected", "Choose “Partial Restore” on any backup to load a single-centre restore option.");
 }
 
 function renderPartialRestoreSummary() {
@@ -3931,10 +3929,7 @@ async function openPartialRestore(backupId) {
     showToast("No database connection");
     return;
   }
-  const panel = document.getElementById("partialRestorePanel");
-  if (panel) {
-    panel.innerHTML = `<p style="color:var(--muted)">Loading centre restore options...</p>`;
-  }
+  setPanelState("partialRestorePanel", "loading", "Loading centre restore options", "Fetching the selected backup and matching centres.");
 
   const { data, error } = await supabaseClient
     .from("app_backups")
@@ -3943,9 +3938,7 @@ async function openPartialRestore(backupId) {
     .single();
 
   if (error || !data) {
-    if (panel) {
-      panel.innerHTML = `<p style="color:var(--red)">Could not load partial restore options.</p>`;
-    }
+    setPanelState("partialRestorePanel", "error", "Partial restore unavailable", "The selected backup could not be loaded for centre-level restore.");
     showToast("Could not load backup");
     return;
   }
@@ -4151,15 +4144,18 @@ async function restoreSelectedCentre() {
     renderUnlockRequests();
     renderAuditLog();
     renderPartialRestoreSummary();
+    setBackupStatus("success", `Centre restored: ${centreName}`, `Backup #${backupMeta.id} was applied only to ${escapeHtml(centreName)}.`);
     showToast(`${centreName} restored from backup #${backupMeta.id}`);
   } catch (error) {
     console.error(error);
+    setBackupStatus("error", `Partial restore failed for ${centreName}`, "The selected centre could not be restored from the backup.");
     showToast("Partial restore failed");
   }
 }
 
 // Restore backup
 async function restoreBackup(backupId) {
+  setBackupStatus("loading", `Preparing restore for backup #${backupId}`, "Loading the backup and validating its contents.");
   const { data: previewData, error: previewError } = await supabaseClient
     .from("app_backups")
     .select("backup_data")
@@ -4167,6 +4163,7 @@ async function restoreBackup(backupId) {
     .single();
 
   if (previewError || !previewData) {
+    setBackupStatus("error", `Restore failed for backup #${backupId}`, "The backup could not be loaded from Supabase.");
     showToast("❌ Failed to load backup");
     return;
   }
@@ -4183,6 +4180,7 @@ async function restoreBackup(backupId) {
   )) return;
 
   showToast("⏳ Restoring backup...");
+  setBackupStatus("loading", `Restoring backup #${backupId}`, "Overwriting the live app state with the selected backup.");
 
   const state = previewState;
 
@@ -4191,12 +4189,14 @@ async function restoreBackup(backupId) {
   try {
     await saveAll();
 
+    setBackupStatus("success", `Backup #${backupId} restored`, "The full live state has been replaced successfully. Reloading now.");
     showToast("✅ Backup restored");
 
     location.reload();
 
   } catch (err) {
     console.error(err);
+    setBackupStatus("error", `Restore failed for backup #${backupId}`, "The app could not persist the restored state.");
     showToast("❌ Restore failed");
   }
 }
@@ -4205,17 +4205,28 @@ async function renderBackups() {
   if (!container) return;
 
   if (!supabaseClient) {
-    container.innerHTML = `<p style="color:var(--muted)">No database connection — Supabase backups unavailable. Use Export to File below.</p>`;
+    container.innerHTML = backupStateMarkup("empty", "No database connection", "Supabase backups are unavailable right now. You can still use Export to File below.");
     return;
   }
 
-  container.innerHTML = `<p style="color:var(--muted);font-size:.85rem">Loading backups...</p>`;
-  const backups = await loadBackups();
+  container.innerHTML = backupStateMarkup("loading", "Loading backups", "Fetching the latest cloud backup list from Supabase.");
+  let backups = [];
+  try {
+    backups = await loadBackups();
+  } catch (error) {
+    console.error(error);
+    container.innerHTML = backupStateMarkup("error", "Could not load backups", "Supabase returned an error while fetching the backup list.");
+    setBackupStatus("error", "Backup list unavailable", "The cloud backup list could not be loaded.");
+    return;
+  }
 
   if (!backups.length) {
-    container.innerHTML = `<p style="color:var(--muted)">No Supabase backups yet. Click "Backup Now" to create one.</p>`;
+    container.innerHTML = backupStateMarkup("empty", "No backups yet", "Click “Backup Now” to create the first cloud snapshot.");
+    setBackupStatus("empty", "No cloud backups yet", "Create a manual backup now, or wait for the automatic daily snapshot.");
     return;
   }
+
+  setBackupStatus("success", "Cloud backups ready", `${backups.length} backup snapshot${backups.length === 1 ? "" : "s"} loaded from Supabase.`);
 
   container.innerHTML = backups.map(b => `
     <div class="unlock-card">
