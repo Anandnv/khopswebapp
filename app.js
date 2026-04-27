@@ -236,6 +236,12 @@ function deepCloneValue(value, fallback = null) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function confirmRestoreAction(title, detail) {
+  const firstStep = window.confirm(`⚠️ ${title}\n\n${detail}\n\nDo you want to continue?`);
+  if (!firstStep) return false;
+  return window.confirm(`🔒 Final confirmation\n\n${title}\n\nPlease confirm once more to proceed.`);
+}
+
 function writeAuditLog(centreIndex, date, before, after) {
   const center = centers[centreIndex];
   const isUnlocked = !!getApprovedUnlock(centreIndex, date);
@@ -4032,7 +4038,14 @@ async function restoreSelectedCentre() {
     return;
   }
 
-  if (!confirm(`Restore only ${centreName} from backup #${backupMeta.id}?`)) return;
+  const backupEntries = countCentreEntryDates(backupState, backupCentreIndex);
+  const backupAudit = countCentreAuditRecords(backupState, backupCentreIndex);
+  const backupUnlocks = countCentreUnlockRecords(backupState, backupCentreIndex);
+
+  if (!confirmRestoreAction(
+    `Restore only ${centreName} from backup #${backupMeta.id}?`,
+    `This will replace ${centreName}'s centre settings, ${backupEntries} daily entr${backupEntries === 1 ? "y" : "ies"}, ${backupAudit} audit record${backupAudit === 1 ? "" : "s"}, and ${backupUnlocks} unlock request${backupUnlocks === 1 ? "" : "s"}. Other centres will stay unchanged.`
+  )) return;
 
   showToast(`Restoring ${centreName} from backup #${backupMeta.id}...`);
 
@@ -4090,22 +4103,31 @@ async function restoreSelectedCentre() {
 
 // Restore backup
 async function restoreBackup(backupId) {
-  if (!confirm("⚠️ This will overwrite ALL current data. Continue?")) return;
-
-  showToast("⏳ Restoring backup...");
-
-  const { data, error } = await supabaseClient
+  const { data: previewData, error: previewError } = await supabaseClient
     .from("app_backups")
     .select("backup_data")
     .eq("id", backupId)
     .single();
 
-  if (error || !data) {
+  if (previewError || !previewData) {
     showToast("❌ Failed to load backup");
     return;
   }
 
-  const state = data.backup_data;
+  const previewState = previewData.backup_data || {};
+  const entryCount = countDailyEntries(previewState);
+  const auditCount = countAuditEntries(previewState);
+  const adminCount = countAdmins(previewState);
+  const centreCount = Array.isArray(previewState.centers) ? previewState.centers.length : 0;
+
+  if (!confirmRestoreAction(
+    `Restore full backup #${backupId}?`,
+    `This will overwrite the full live app state with ${centreCount} centres, ${entryCount} daily entries, ${auditCount} audit records, and ${adminCount} admin account${adminCount === 1 ? "" : "s"}.`
+  )) return;
+
+  showToast("⏳ Restoring backup...");
+
+  const state = previewState;
 
   applyAppState(state);
 
