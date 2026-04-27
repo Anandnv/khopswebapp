@@ -7,6 +7,7 @@ let centers = [
   { name: "Edappal", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 7, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
   { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 4, yesterday: 0, target: 23, cagToday: 0, cagTotal: 4, kasp: 1, general: 3, medisep: 0 }
 ];
+const DEFAULT_CENTERS = JSON.parse(JSON.stringify(centers));
 
 let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
@@ -756,6 +757,20 @@ let procedureSettings = [
   { name: "TMBRY", counted: true, isCag: false, active: true },
   { name: "PERICARDIOCENTESIS", counted: false, isCag: false, active: true }
 ];
+const DEFAULT_PROCEDURE_SETTINGS = JSON.parse(JSON.stringify(procedureSettings));
+
+function ensureBootstrapData() {
+  let changed = false;
+  if (!Array.isArray(centers) || centers.length === 0) {
+    centers = JSON.parse(JSON.stringify(DEFAULT_CENTERS));
+    changed = true;
+  }
+  if (!Array.isArray(procedureSettings) || procedureSettings.length === 0) {
+    procedureSettings = JSON.parse(JSON.stringify(DEFAULT_PROCEDURE_SETTINGS));
+    changed = true;
+  }
+  return changed;
+}
 
 function activeProcedures() {
   return procedureSettings.filter((procedure) => procedure.active).map((procedure) => procedure.name);
@@ -3512,15 +3527,17 @@ async function ensureDailyBackup() {
 
 async function init() {
   const loadedState = await setupPersistence();
+  const bootstrappedDefaults = ensureBootstrapData();
   await ensureDailyBackup();
   const hasAnyEntries = Object.keys(entries).some(
     (k) => Object.keys(entries[k] || {}).length > 0
   );
-  if (!loadedState && !hasAnyEntries) {
+  if ((!loadedState || bootstrappedDefaults) && !hasAnyEntries) {
     seedInitialEntries();
     persistSoon();
   } else {
     refreshCenterRollups(reportDate);
+    if (bootstrappedDefaults) persistSoon();
   }
 
  // Auto refresh for requests
