@@ -34,6 +34,7 @@ const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
 let persistenceReady = false;
 let saveTimer = null;
+let partialRestoreContext = null;
 
 function getMonthEndDate(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
@@ -228,6 +229,11 @@ function formatSavedAt(isoString) {
 
 function deepCloneEntry(entry) {
   return JSON.parse(JSON.stringify(entry));
+}
+
+function deepCloneValue(value, fallback = null) {
+  if (value === undefined) return fallback;
+  return JSON.parse(JSON.stringify(value));
 }
 
 function writeAuditLog(centreIndex, date, before, after) {
@@ -3747,6 +3753,341 @@ function clearRestorePreview() {
   panel.innerHTML = `<p style="color:var(--muted)">Choose “Preview Restore” on any backup to inspect what would be restored.</p>`;
 }
 
+function countCentreEntryDates(state, centreIndex) {
+  const centreEntries = state?.entries?.[centreIndex];
+  return centreEntries && typeof centreEntries === "object" ? Object.keys(centreEntries).length : 0;
+}
+
+function countCentreAuditRecords(state, centreIndex) {
+  return Array.isArray(state?.auditLog)
+    ? state.auditLog.filter((record) => Number(record.centreIndex) === Number(centreIndex)).length
+    : 0;
+}
+
+function countCentreUnlockRecords(state, centreIndex) {
+  return Array.isArray(state?.unlockRequests)
+    ? state.unlockRequests.filter((record) => Number(record.centreIndex) === Number(centreIndex)).length
+    : 0;
+}
+
+function clearPartialRestore() {
+  partialRestoreContext = null;
+  const panel = document.getElementById("partialRestorePanel");
+  if (!panel) return;
+  panel.innerHTML = `<p style="color:var(--muted)">Choose “Partial Restore” on any backup to load a single-centre restore option.</p>`;
+}
+
+function renderPartialRestoreSummary() {
+  const panel = document.getElementById("partialRestorePanel");
+  if (!panel || !partialRestoreContext) return;
+
+  const { backupMeta, backupState, availableCentres } = partialRestoreContext;
+  const select = document.getElementById("partialRestoreCentreSelect");
+  const selectedName = select?.value || availableCentres[0] || "";
+
+  if (!selectedName) {
+    panel.innerHTML = `
+      <div class="backup-compare-card">
+        <span>Backup #${backupMeta.id}</span>
+        <strong>No matching centres available</strong>
+        <p style="margin:10px 0 0;color:var(--muted)">This backup does not contain any centre names that match the current live configuration.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const backupCentreIndex = (backupState.centers || []).findIndex((centre) => centre?.name === selectedName);
+  const currentCentreIndex = centers.findIndex((centre) => centre?.name === selectedName);
+  const backupCentre = backupState.centers?.[backupCentreIndex] || null;
+  const currentCentre = centers[currentCentreIndex] || null;
+
+  const backupEntries = countCentreEntryDates(backupState, backupCentreIndex);
+  const currentEntries = countCentreEntryDates(getAppState(), currentCentreIndex);
+  const backupAudit = countCentreAuditRecords(backupState, backupCentreIndex);
+  const currentAudit = countCentreAuditRecords(getAppState(), currentCentreIndex);
+  const backupUnlocks = countCentreUnlockRecords(backupState, backupCentreIndex);
+  const currentUnlocks = countCentreUnlockRecords(getAppState(), currentCentreIndex);
+
+  panel.innerHTML = `
+    <div class="backup-compare-card" style="margin-bottom:12px">
+      <span>Selected Backup</span>
+      <strong>Backup #${backupMeta.id}</strong>
+      <p style="margin:10px 0 0;color:var(--muted)">
+        Created ${new Date(backupMeta.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+        ${backupMeta.created_by ? `by ${escapeHtml(backupMeta.created_by)}` : ""}.
+      </p>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:14px">
+      <label style="min-width:260px;flex:1">
+        <span style="display:block;margin-bottom:6px;font-size:.82rem;color:var(--muted)">Centre To Restore</span>
+        <select id="partialRestoreCentreSelect" onchange="renderPartialRestoreSummary()">
+          ${availableCentres.map((centreName) => `
+            <option value="${escapeHtml(centreName)}" ${centreName === selectedName ? "selected" : ""}>${escapeHtml(centreName)}</option>
+          `).join("")}
+        </select>
+      </label>
+      <button class="button primary" onclick="restoreSelectedCentre()">Restore Selected Centre</button>
+    </div>
+    <div class="backup-compare-grid">
+      <div class="backup-compare-card">
+        <span>Daily Entries</span>
+        <strong>${backupEntries}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupEntries - currentEntries)}">
+          Current ${currentEntries} | Delta ${deltaLabel(backupEntries - currentEntries)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Audit Records</span>
+        <strong>${backupAudit}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupAudit - currentAudit)}">
+          Current ${currentAudit} | Delta ${deltaLabel(backupAudit - currentAudit)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Unlock Requests</span>
+        <strong>${backupUnlocks}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupUnlocks - currentUnlocks)}">
+          Current ${currentUnlocks} | Delta ${deltaLabel(backupUnlocks - currentUnlocks)}
+        </div>
+      </div>
+    </div>
+    <div class="backup-compare-card" style="margin-top:12px">
+      <span>Centre Snapshot</span>
+      <strong>${escapeHtml(selectedName)}</strong>
+      <p style="margin:10px 0 0;color:var(--muted)">
+        Monthly target in backup: <strong>${backupCentre?.target ?? 0}</strong>.
+        Current target: <strong>${currentCentre?.target ?? 0}</strong>.
+        This restore replaces this centre's daily entries, entry metadata, unlock requests, audit trail, and centre settings only.
+      </p>
+    </div>
+  `;
+}
+
+async function openPartialRestore(backupId) {
+  if (!supabaseClient) {
+    showToast("No database connection");
+    return;
+  }
+  const panel = document.getElementById("partialRestorePanel");
+  if (panel) {
+    panel.innerHTML = `<p style="color:var(--muted)">Loading centre restore options...</p>`;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("id, created_at, created_by, backup_data")
+    .eq("id", backupId)
+    .single();
+
+  if (error || !data) {
+    if (panel) {
+      panel.innerHTML = `<p style="color:var(--red)">Could not load partial restore options.</p>`;
+    }
+    showToast("Could not load backup");
+    return;
+  }
+
+  const backupState = data.backup_data || {};
+  const currentCentreNames = new Set(centers.map((centre) => centre?.name).filter(Boolean));
+  const availableCentres = (backupState.centers || [])
+    .map((centre) => centre?.name)
+    .filter((name) => name && currentCentreNames.has(name));
+
+  partialRestoreContext = {
+    backupId,
+    backupMeta: data,
+    backupState,
+    availableCentres
+  };
+
+  renderPartialRestoreSummary();
+  showToast(`Loaded centre restore options for backup #${backupId}`);
+}
+
+function buildCentreEntryRows(centreIndex) {
+  return Object.keys(entries[centreIndex] || {}).map((date) => {
+    const entry = entries[centreIndex][date];
+    return {
+      centre_index: Number(centreIndex),
+      centre_name: centers[centreIndex]?.name || "",
+      entry_date: date,
+      op: entry.op || {},
+      referrals: entry.referrals || {},
+      procedures: entry.procedures || {},
+      updated_at: new Date().toISOString()
+    };
+  });
+}
+
+function buildCentreMetaRows(centreIndex) {
+  return Object.keys(entryMeta[centreIndex] || {}).map((date) => {
+    const meta = entryMeta[centreIndex][date];
+    return {
+      centre_index: Number(centreIndex),
+      entry_date: date,
+      saved_at: meta.savedAt,
+      saved_by: meta.savedBy
+    };
+  });
+}
+
+function buildCentreUnlockRows(centreIndex) {
+  return unlockRequests
+    .filter((record) => Number(record.centreIndex) === Number(centreIndex))
+    .map((record) => ({
+      id: record.id,
+      centre_index: Number(centreIndex),
+      centre_name: record.centreName,
+      entry_date: record.date,
+      reason: record.reason,
+      status: record.status,
+      requested_at: record.requestedAt,
+      resolved_at: record.resolvedAt || null,
+      expires_at: record.expiresAt || null
+    }));
+}
+
+function buildCentreAuditRows(centreIndex) {
+  return auditLog
+    .filter((record) => Number(record.centreIndex) === Number(centreIndex))
+    .map((record) => ({
+      id: record.id,
+      centre_index: Number(centreIndex),
+      centre_name: record.centreName,
+      entry_date: record.date,
+      saved_at: record.savedAt,
+      saved_by: record.savedBy,
+      type: record.type,
+      unlock_request_id: record.unlockRequestId || null,
+      reverted_from_id: record.revertedFromId || null,
+      before_state: record.before || {},
+      after_state: record.after || {}
+    }));
+}
+
+async function persistPartialRestoreCentre(centreIndex) {
+  saveLocalBackup();
+  if (!supabaseClient) return;
+
+  await saveConfig();
+
+  await Promise.all([
+    supabaseClient.from("daily_entries").delete().eq("centre_index", centreIndex),
+    supabaseClient.from("entry_meta").delete().eq("centre_index", centreIndex),
+    supabaseClient.from("unlock_requests").delete().eq("centre_index", centreIndex),
+    supabaseClient.from("audit_log").delete().eq("centre_index", centreIndex)
+  ]);
+
+  const entryRows = buildCentreEntryRows(centreIndex);
+  if (entryRows.length) {
+    const { error } = await supabaseClient
+      .from("daily_entries")
+      .upsert(entryRows, { onConflict: "centre_index,entry_date" });
+    if (error) throw error;
+  }
+
+  const metaRows = buildCentreMetaRows(centreIndex);
+  if (metaRows.length) {
+    const { error } = await supabaseClient
+      .from("entry_meta")
+      .upsert(metaRows, { onConflict: "centre_index,entry_date" });
+    if (error) throw error;
+  }
+
+  const unlockRows = buildCentreUnlockRows(centreIndex);
+  if (unlockRows.length) {
+    const { error } = await supabaseClient
+      .from("unlock_requests")
+      .upsert(unlockRows, { onConflict: "id" });
+    if (error) throw error;
+  }
+
+  const auditRows = buildCentreAuditRows(centreIndex);
+  if (auditRows.length) {
+    const { error } = await supabaseClient
+      .from("audit_log")
+      .upsert(auditRows, { onConflict: "id" });
+    if (error) throw error;
+  }
+}
+
+async function restoreSelectedCentre() {
+  if (!partialRestoreContext) {
+    showToast("Choose a backup first");
+    return;
+  }
+
+  const select = document.getElementById("partialRestoreCentreSelect");
+  const centreName = select?.value;
+  if (!centreName) {
+    showToast("Select a centre to restore");
+    return;
+  }
+
+  const { backupMeta, backupState } = partialRestoreContext;
+  const backupCentreIndex = (backupState.centers || []).findIndex((centre) => centre?.name === centreName);
+  const currentCentreIndex = centers.findIndex((centre) => centre?.name === centreName);
+  if (backupCentreIndex === -1 || currentCentreIndex === -1) {
+    showToast("Could not match that centre");
+    return;
+  }
+
+  if (!confirm(`Restore only ${centreName} from backup #${backupMeta.id}?`)) return;
+
+  showToast(`Restoring ${centreName} from backup #${backupMeta.id}...`);
+
+  const restoredCentre = deepCloneValue(backupState.centers?.[backupCentreIndex], centers[currentCentreIndex]);
+  restoredCentre.name = centreName;
+  centers[currentCentreIndex] = restoredCentre;
+
+  entries[currentCentreIndex] = deepCloneValue(backupState.entries?.[backupCentreIndex], {});
+  if (entryMeta[currentCentreIndex]) delete entryMeta[currentCentreIndex];
+  entryMeta[currentCentreIndex] = deepCloneValue(backupState.entryMeta?.[backupCentreIndex], {});
+
+  unlockRequests = [
+    ...unlockRequests.filter((record) => Number(record.centreIndex) !== Number(currentCentreIndex)),
+    ...(backupState.unlockRequests || [])
+      .filter((record) => Number(record.centreIndex) === Number(backupCentreIndex))
+      .map((record) => ({
+        ...deepCloneValue(record, {}),
+        centreIndex: currentCentreIndex,
+        centreName
+      }))
+  ];
+
+  auditLog = [
+    ...auditLog.filter((record) => Number(record.centreIndex) !== Number(currentCentreIndex)),
+    ...(backupState.auditLog || [])
+      .filter((record) => Number(record.centreIndex) === Number(backupCentreIndex))
+      .map((record) => ({
+        ...deepCloneValue(record, {}),
+        centreIndex: currentCentreIndex,
+        centreName
+      }))
+  ];
+
+  writeAdminAuditLog(
+    "partial_restore_centre",
+    `Restored ${centreName} from backup #${backupMeta.id}`,
+    [currentCentreIndex]
+  );
+
+  try {
+    await persistPartialRestoreCentre(currentCentreIndex);
+    refreshCenterRollups(reportDate);
+    renderConsolidated();
+    renderTargets();
+    renderUsers();
+    renderUnlockRequests();
+    renderAuditLog();
+    renderPartialRestoreSummary();
+    showToast(`${centreName} restored from backup #${backupMeta.id}`);
+  } catch (error) {
+    console.error(error);
+    showToast("Partial restore failed");
+  }
+}
+
 // Restore backup
 async function restoreBackup(backupId) {
   if (!confirm("⚠️ This will overwrite ALL current data. Continue?")) return;
@@ -3807,6 +4148,7 @@ async function renderBackups() {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="button secondary" onclick="compareBackup(${b.id})">🔥 Compare</button>
           <button class="button secondary" onclick="previewRestore(${b.id})">👁 Preview Restore</button>
+          <button class="button secondary" onclick="openPartialRestore(${b.id})">🎯 Partial Restore</button>
           <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
           <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
         </div>
@@ -3863,6 +4205,7 @@ async function init() {
   setupSuperAdminControls();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
   document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
+  document.getElementById("partialRestoreClearBtn")?.addEventListener("click", clearPartialRestore);
 
   // Ensure entry date input always starts on today
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
