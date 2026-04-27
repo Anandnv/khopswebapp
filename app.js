@@ -3639,10 +3639,9 @@ function renderAdminList() {
         <input type="password" placeholder="New password" class="admin-pw-input" data-admin-idx="${idx}" />
         <div class="centre-assign-wrap">
           ${centers.map((c, ci) => `
-            <label class="centre-assign-chip ${admin.assignedCentres?.includes(ci) ? "selected" : ""}" data-admin-idx="${idx}" data-centre-idx="${ci}">
-              <input type="checkbox" ${admin.assignedCentres?.includes(ci) ? "checked" : ""} style="display:none" />
+            <button type="button" class="centre-assign-chip ${admin.assignedCentres?.includes(ci) ? "selected" : ""}" data-admin-idx="${idx}" data-centre-idx="${ci}" aria-pressed="${admin.assignedCentres?.includes(ci) ? "true" : "false"}">
               ${escapeHtml(c.name)}
-            </label>
+            </button>
           `).join("")}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -3671,9 +3670,10 @@ function renderAdminList() {
 
   // Centre chip toggle (visual only)
   container.querySelectorAll(".centre-assign-chip").forEach(chip => {
-    chip.addEventListener("click", () => {
+    chip.addEventListener("click", (event) => {
+      event.preventDefault();
       chip.classList.toggle("selected");
-      chip.querySelector("input").checked = chip.classList.contains("selected");
+      chip.setAttribute("aria-pressed", chip.classList.contains("selected") ? "true" : "false");
     });
   });
 

@@ -1363,6 +1363,7 @@ body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admi
 }
 
 .centre-assign-chip {
+  appearance: none;
   padding: 5px 10px;
   border-radius: 999px;
   border: 1.5px solid var(--line);
