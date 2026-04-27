@@ -3474,6 +3474,50 @@ async function loadBackups() {
   return data;
 }
 
+async function deleteBackup(backupId) {
+  if (!supabaseClient) {
+    showToast("No database connection");
+    return;
+  }
+
+  const ok = window.confirm(
+    `Delete backup #${backupId}?\n\nThis removes only the saved backup snapshot. It will not change the current live app data.`
+  );
+  if (!ok) return;
+
+  const status = document.getElementById("backupStatus");
+  if (status) {
+    status.textContent = `⏳ Deleting backup #${backupId}...`;
+  }
+
+  const { error } = await supabaseClient
+    .from("app_backups")
+    .delete()
+    .eq("id", backupId);
+
+  if (error) {
+    console.error(error);
+    if (status) {
+      status.textContent = `❌ Failed to delete backup #${backupId}`;
+    }
+    showToast("Could not delete backup");
+    return;
+  }
+
+  if (partialRestoreContext?.backupId === backupId) clearPartialRestore();
+  const compareHtml = document.getElementById("backupComparePreview")?.innerHTML || "";
+  const restoreHtml = document.getElementById("restorePreviewPanel")?.innerHTML || "";
+  if (compareHtml.includes(`Backup #${backupId}`)) clearBackupComparison();
+  if (restoreHtml.includes(`Backup #${backupId}`)) clearRestorePreview();
+
+  if (status) {
+    status.textContent = `✅ Deleted backup #${backupId}`;
+  }
+
+  await renderBackups();
+  showToast(`Deleted backup #${backupId}`);
+}
+
 function countDailyEntries(state) {
   return Object.values(state?.entries || {}).reduce((count, centreEntries) => {
     return count + Object.keys(centreEntries || {}).length;
@@ -4187,6 +4231,7 @@ async function renderBackups() {
           <button class="button secondary" onclick="openPartialRestore(${b.id})">🎯 Partial Restore</button>
           <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
           <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
+          <button class="button secondary" onclick="deleteBackup(${b.id})">🗑 Delete</button>
         </div>
       </div>
     </div>
