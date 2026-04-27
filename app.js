@@ -187,6 +187,18 @@ function writeAdminAuditLog(action, detail, centreIndexes = []) {
   if (adminAuditLog.length > 1000) adminAuditLog.splice(0, adminAuditLog.length - 1000);
 }
 
+function getCurrentActorLabel() {
+  if (currentRole === "superadmin") return "Super Admin";
+  if (currentRole === "admin") {
+    const admin = admins[loggedInAdminIndex];
+    return admin?.name || admin?.username || "Admin";
+  }
+  if (currentRole === "centre") {
+    return centers[loggedInCentreIndex]?.name || "Centre User";
+  }
+  return "System";
+}
+
 /** Returns the centre indexes visible to the current admin session */
 function getAssignedCentreIndexes() {
   if (currentRole === "superadmin") return centers.map((_, i) => i);
@@ -3399,13 +3411,14 @@ async function createBackup() {
   const data = getAppState();
 
   try {
+    const createdBy = getCurrentActorLabel();
     await supabaseClient
   .from("app_backups")
   .insert({
     backup_data: data,
     version: "1.0",
     app_version: "KHOPS_v1",
-    created_by: currentRole || "system",
+    created_by: createdBy,
     created_at: new Date().toISOString()  
   });
 
@@ -3413,7 +3426,7 @@ async function createBackup() {
 
     // 👉 SHOW SUCCESS
     if (el) {
-      el.textContent = "✅ Last backup: " + new Date().toLocaleString();
+      el.textContent = "✅ Last backup: " + new Date().toLocaleString() + ` by ${createdBy}`;
     }
 
   } catch (err) {
@@ -4165,7 +4178,8 @@ async function renderBackups() {
       <div class="unlock-card-head">
         <div>
           <strong>${new Date(b.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</strong>
-          <span style="font-size:12px;color:var(--muted)">Backup ID: ${b.id}${b.created_by ? ` · By ${escapeHtml(b.created_by)}` : ""}</span>
+          <span style="display:block;font-size:12px;color:var(--muted)">Backup ID: ${b.id}</span>
+          <span style="display:block;font-size:12px;color:var(--muted)">Created by: ${escapeHtml(b.created_by || "Unknown")}</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="button secondary" onclick="compareBackup(${b.id})">🔥 Compare</button>
