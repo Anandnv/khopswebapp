@@ -3540,14 +3540,86 @@ function countAdmins(state) {
   return Array.isArray(state?.admins) ? state.admins.length : 0;
 }
 
-function buildComparisonRows(currentList, backupList, keyField = "name") {
+function stableStringify(value) {
+  if (value === null || value === undefined) return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function centreStateSummary(state, centreName) {
+  const centreIndex = (state?.centers || []).findIndex((centre) => centre?.name === centreName);
+  if (centreIndex === -1) return null;
+
+  const centre = state.centers?.[centreIndex] || {};
+  const centreEntries = state?.entries?.[centreIndex] || {};
+  const dates = Object.keys(centreEntries).sort();
+
+  let interventionTotal = 0;
+  let cagTotal = 0;
+  let opTotal = 0;
+  let ipTotal = 0;
+
+  dates.forEach((date) => {
+    const entry = centreEntries[date] || emptyEntry();
+    interventionTotal += entryInterventionTotal(entry);
+    cagTotal += entryCagTotal(entry);
+    opTotal += currencySafeNumber((entry.op || {})["Total OP"]);
+    ipTotal += currencySafeNumber((entry.op || {}).IP);
+  });
+
+  return {
+    name: centreName,
+    target: currencySafeNumber(centre.target),
+    username: centre.username || "",
+    datesCount: dates.length,
+    latestDate: dates[dates.length - 1] || "-",
+    interventionTotal,
+    cagTotal,
+    opTotal,
+    ipTotal,
+    entryMeta: state?.entryMeta?.[centreIndex] || {}
+  };
+}
+
+function formatCentreSummary(summary) {
+  if (!summary) return "Missing";
+  return `Target ${summary.target} | Dates ${summary.datesCount} | Intv ${summary.interventionTotal} | CAG ${summary.cagTotal} | OP ${summary.opTotal} | IP ${summary.ipTotal} | Last ${summary.latestDate}`;
+}
+
+function buildCentreComparisonRows(currentState, backupState) {
+  const currentNames = (currentState?.centers || []).map((centre) => centre?.name).filter(Boolean);
+  const backupNames = (backupState?.centers || []).map((centre) => centre?.name).filter(Boolean);
+  const keys = [...new Set([...currentNames, ...backupNames])].sort();
+  return keys.map((key) => {
+    const currentSummary = centreStateSummary(currentState, key);
+    const backupSummary = centreStateSummary(backupState, key);
+    const currentSignature = currentSummary ? stableStringify(currentSummary) : null;
+    const backupSignature = backupSummary ? stableStringify(backupSummary) : null;
+    return {
+      key,
+      current: !!currentSummary,
+      backup: !!backupSummary,
+      changed: currentSignature !== backupSignature,
+      currentText: formatCentreSummary(currentSummary),
+      backupText: formatCentreSummary(backupSummary)
+    };
+  });
+}
+
+function buildComparisonRows(currentList, backupList, keyField = "name", projector = (item) => item) {
   const currentMap = new Map((currentList || []).map((item) => [item?.[keyField], item]));
   const backupMap = new Map((backupList || []).map((item) => [item?.[keyField], item]));
   const keys = [...new Set([...currentMap.keys(), ...backupMap.keys()])].filter(Boolean).sort();
   return keys.map((key) => ({
     key,
     current: currentMap.has(key),
-    backup: backupMap.has(key)
+    backup: backupMap.has(key),
+    changed: stableStringify(projector(currentMap.get(key))) !== stableStringify(projector(backupMap.get(key))),
+    currentText: currentMap.has(key) ? "Present" : "Missing",
+    backupText: backupMap.has(key) ? "Present" : "Missing"
   }));
 }
 
@@ -3563,6 +3635,17 @@ function deltaLabel(delta) {
   return "No change";
 }
 
+function comparisonStatusLabel(row) {
+  if (!row.current) return "Missing in current";
+  if (!row.backup) return "Missing in backup";
+  return row.changed ? "Changed" : "Same";
+}
+
+function comparisonStatusClass(row) {
+  if (!row.current || !row.backup || row.changed) return "backup-compare-down";
+  return "backup-compare-up";
+}
+
 function renderBackupComparison(backupMeta, backupState) {
   const currentState = getAppState();
   const preview = document.getElementById("backupComparePreview");
@@ -3575,9 +3658,18 @@ function renderBackupComparison(backupMeta, backupState) {
   const currentAdminCount = countAdmins(currentState);
   const backupAdminCount = countAdmins(backupState);
 
-  const centreRows = buildComparisonRows(currentState.centers, backupState.centers, "name");
-  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name");
-  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username");
+  const centreRows = buildCentreComparisonRows(currentState, backupState);
+  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name", (item) => item ? {
+    name: item.name,
+    counted: !!item.counted,
+    isCag: !!item.isCag,
+    active: !!item.active
+  } : null);
+  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username", (item) => item ? {
+    name: item.name,
+    username: item.username,
+    assignedCentres: [...(item.assignedCentres || [])].sort()
+  } : null);
 
   const section = (title, rows, currentLabel, backupLabel) => `
     <details class="backup-compare-section">
@@ -3586,6 +3678,7 @@ function renderBackupComparison(backupMeta, backupState) {
         <thead>
           <tr>
             <th>Name</th>
+            <th>Status</th>
             <th>${currentLabel}</th>
             <th>${backupLabel}</th>
           </tr>
@@ -3596,11 +3689,12 @@ function renderBackupComparison(backupMeta, backupState) {
               ? rows.map((row) => `
                 <tr>
                   <td>${escapeHtml(row.key)}</td>
-                  <td>${row.current ? "Present" : "Missing"}</td>
-                  <td>${row.backup ? "Present" : "Missing"}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText || (row.current ? "Present" : "Missing"))}</td>
+                  <td>${escapeHtml(row.backupText || (row.backup ? "Present" : "Missing"))}</td>
                 </tr>
               `).join("")
-              : `<tr><td colspan="3">No items to compare.</td></tr>`
+              : `<tr><td colspan="4">No items to compare.</td></tr>`
           }
         </tbody>
       </table>
@@ -3682,13 +3776,45 @@ function renderRestorePreview(backupMeta, backupState) {
   const currentAdminCount = countAdmins(currentState);
   const backupAdminCount = countAdmins(backupState);
 
-  const centreRows = buildComparisonRows(currentState.centers, backupState.centers, "name");
-  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name");
-  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username");
+  const centreRows = buildCentreComparisonRows(currentState, backupState);
+  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name", (item) => item ? {
+    name: item.name,
+    counted: !!item.counted,
+    isCag: !!item.isCag,
+    active: !!item.active
+  } : null);
+  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username", (item) => item ? {
+    name: item.name,
+    username: item.username,
+    assignedCentres: [...(item.assignedCentres || [])].sort()
+  } : null);
 
-  const changedCentres = centreRows.filter((row) => row.current !== row.backup).length;
-  const changedProcedures = procedureRows.filter((row) => row.current !== row.backup).length;
-  const changedAdmins = adminRows.filter((row) => row.current !== row.backup).length;
+  const changedCentres = centreRows.filter((row) => row.changed).length;
+  const changedProcedures = procedureRows.filter((row) => row.changed).length;
+  const changedAdmins = adminRows.filter((row) => row.changed).length;
+
+  const section = (title, rows) => `
+    <details class="backup-compare-section">
+      <summary>${title} (${rows.filter((row) => row.changed).length})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Name</th><th>Status</th><th>Current</th><th>Backup</th></tr></thead>
+        <tbody>
+          ${
+            rows.length
+              ? rows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText || (row.current ? "Present" : "Missing"))}</td>
+                  <td>${escapeHtml(row.backupText || (row.backup ? "Present" : "Missing"))}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="4">No items to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
 
   panel.innerHTML = `
     <div class="backup-compare-grid">
@@ -3726,63 +3852,9 @@ function renderRestorePreview(backupMeta, backupState) {
         Restoring this backup will overwrite the current live state with the values shown above.
       </p>
     </div>
-    <details class="backup-compare-section">
-      <summary>Centres Affected (${changedCentres})</summary>
-      <table class="backup-compare-table">
-        <thead><tr><th>Centre</th><th>Current</th><th>Backup</th></tr></thead>
-        <tbody>
-          ${
-            centreRows.length
-              ? centreRows.map((row) => `
-                <tr>
-                  <td>${escapeHtml(row.key)}</td>
-                  <td>${row.current ? "Present" : "Missing"}</td>
-                  <td>${row.backup ? "Present" : "Missing"}</td>
-                </tr>
-              `).join("")
-              : `<tr><td colspan="3">No centres to preview.</td></tr>`
-          }
-        </tbody>
-      </table>
-    </details>
-    <details class="backup-compare-section">
-      <summary>Procedures Affected (${changedProcedures})</summary>
-      <table class="backup-compare-table">
-        <thead><tr><th>Procedure</th><th>Current</th><th>Backup</th></tr></thead>
-        <tbody>
-          ${
-            procedureRows.length
-              ? procedureRows.map((row) => `
-                <tr>
-                  <td>${escapeHtml(row.key)}</td>
-                  <td>${row.current ? "Present" : "Missing"}</td>
-                  <td>${row.backup ? "Present" : "Missing"}</td>
-                </tr>
-              `).join("")
-              : `<tr><td colspan="3">No procedures to preview.</td></tr>`
-          }
-        </tbody>
-      </table>
-    </details>
-    <details class="backup-compare-section">
-      <summary>Admin Accounts Affected (${changedAdmins})</summary>
-      <table class="backup-compare-table">
-        <thead><tr><th>Admin</th><th>Current</th><th>Backup</th></tr></thead>
-        <tbody>
-          ${
-            adminRows.length
-              ? adminRows.map((row) => `
-                <tr>
-                  <td>${escapeHtml(row.key)}</td>
-                  <td>${row.current ? "Present" : "Missing"}</td>
-                  <td>${row.backup ? "Present" : "Missing"}</td>
-                </tr>
-              `).join("")
-              : `<tr><td colspan="3">No admin accounts to preview.</td></tr>`
-          }
-        </tbody>
-      </table>
-    </details>
+    ${section("Centres Affected", centreRows)}
+    ${section("Procedures Affected", procedureRows)}
+    ${section("Admin Accounts Affected", adminRows)}
   `;
 }
 
