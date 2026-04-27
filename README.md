@@ -37,13 +37,16 @@ If Supabase is not configured, data is stored only in that browser's local stora
 ```js
 window.KH_CONFIG = {
   supabaseUrl: "https://YOUR_PROJECT_ID.supabase.co",
-  supabaseAnonKey: "YOUR_SUPABASE_ANON_KEY"
+  supabaseAnonKey: "YOUR_SUPABASE_ANON_KEY",
+  enableDemoData: false
 };
 ```
 
 For a stricter production build, replace the simple prototype login with Supabase Auth and role-based database policies.
 
 If you already created the Supabase tables before the admin/super-admin feature was added, re-run `supabase/schema.sql` once so `app_config` gets the new `admins` and `admin_audit_log` columns. Without that update, newly created admins may only survive in the current browser's local backup.
+
+`enableDemoData` should stay `false` for production. When false, the app will not auto-seed sample monthly entries after a database wipe.
 
 ## Deploy To Vercel
 

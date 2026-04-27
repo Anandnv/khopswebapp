@@ -1,11 +1,11 @@
 let centers = [
-  { name: "Tirur", username: "tirur", password: "1234", tillDate: 10, yesterday: 2, target: 25, cagToday: 1, cagTotal: 7, kasp: 7, general: 5, medisep: 0 },
-  { name: "Calicut", username: "calicut", password: "1234", tillDate: 5, yesterday: 0, target: 20, cagToday: 0, cagTotal: 5, kasp: 2, general: 2, medisep: 1 },
-  { name: "Kochi", username: "kochi", password: "1234", tillDate: 7, yesterday: 0, target: 25, cagToday: 2, cagTotal: 18, kasp: 0, general: 4, medisep: 3 },
-  { name: "Malappuram", username: "malappuram", password: "1234", tillDate: 15, yesterday: 0, target: 25, cagToday: 1, cagTotal: 7, kasp: 2, general: 13, medisep: 0 },
-  { name: "Perumpilavu", username: "perumpilavu", password: "1234", tillDate: 3, yesterday: 0, target: 15, cagToday: 0, cagTotal: 2, kasp: 1, general: 2, medisep: 0 },
-  { name: "Edappal", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 7, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
-  { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 4, yesterday: 0, target: 23, cagToday: 0, cagTotal: 4, kasp: 1, general: 3, medisep: 0 }
+  { name: "Tirur", username: "tirur", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Calicut", username: "calicut", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Kochi", username: "kochi", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Malappuram", username: "malappuram", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Perumpilavu", username: "perumpilavu", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Edappal", username: "edappal", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 },
+  { name: "Valanchery", username: "valanchery", password: "1234", tillDate: 0, yesterday: 0, target: 0, cagToday: 0, cagTotal: 0, kasp: 0, general: 0, medisep: 0 }
 ];
 const DEFAULT_CENTERS = JSON.parse(JSON.stringify(centers));
 
@@ -1094,6 +1094,7 @@ function refreshCenterRollups(date = reportDate) {
 }
 
 function seedInitialEntries() {
+  if (CONFIG.enableDemoData !== true) return;
   centers.forEach((center, index) => {
     const previous = getEntry(index, "2026-04-19");
     const today = getEntry(index, "2026-04-20");
@@ -3532,7 +3533,7 @@ async function init() {
   const hasAnyEntries = Object.keys(entries).some(
     (k) => Object.keys(entries[k] || {}).length > 0
   );
-  if ((!loadedState || bootstrappedDefaults) && !hasAnyEntries) {
+  if (CONFIG.enableDemoData === true && (!loadedState || bootstrappedDefaults) && !hasAnyEntries) {
     seedInitialEntries();
     persistSoon();
   } else {
