@@ -496,21 +496,46 @@
   </section>
 </section>
         <!-- ─── Backup and restore  ──────────────────────────────────── -->
-         <section id="backupView" class="view">
-  <section class="panel">
-    <div class="panel-head">
-      <div>
-        <h2>Backup & Restore</h2>
-        <p>Manage system backups and restore previous data safely.</p>
-      </div>
-      <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
-    </div>
+        <section id="backupView" class="view">
 
-    <p id="backupStatus" style="margin-bottom:10px;color:gray;"></p>
+          <!-- Supabase cloud backups -->
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>☁️ Cloud Backups (Supabase)</h2>
+                <p>Automatic daily snapshots stored in Supabase. Kept for 90 days. You can download any snapshot as a file or restore it directly.</p>
+              </div>
+              <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
+            </div>
+            <p id="backupStatus" style="margin-bottom:10px;color:var(--muted);font-size:.85rem"></p>
+            <div id="backupList"></div>
+          </section>
 
-    <div id="backupList"></div>
-  </section>
-</section>
+          <!-- Export to local file -->
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>⬇️ Export to File</h2>
+                <p>Download everything — all centres, entries, procedures, audit log — as a single JSON file to your PC. Use this as your offline safety net.</p>
+              </div>
+              <button class="button primary" onclick="exportToFile()">⬇ Download Backup File</button>
+            </div>
+          </section>
+
+          <!-- Import from local file -->
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>⬆️ Import from File</h2>
+                <p>Restore from a previously downloaded backup file. This will overwrite all current data. Use only when recovering from data loss.</p>
+              </div>
+              <button class="button secondary" onclick="triggerImport()">⬆ Select Backup File</button>
+            </div>
+            <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="handleImportFile(event)" />
+            <div id="importStatus"></div>
+          </section>
+
+        </section>
 <!-- ─── Audit Log (admin only) ──────────────────────────────────── -->
         <section id="auditView" class="view">
           <section class="panel">

@@ -3009,7 +3009,170 @@ async function migrateLegacyPasswords() {
 
 // ================= BACKUP SYSTEM =================
 
-// Create backup
+// ─── Export to local file ─────────────────────────────────────────────────────
+
+function exportToFile() {
+  const backup = {
+    exportedAt:        new Date().toISOString(),
+    exportedBy:        currentRole === "admin" ? "Admin" : (centers[loggedInCentreIndex]?.name || "unknown"),
+    appVersion:        "KHOPS_v2",
+    centers,
+    procedureSettings,
+    entries,
+    entryMeta,
+    unlockRequests,
+    auditLog
+  };
+  const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  downloadBlob(JSON.stringify(backup, null, 2), `kh-backup-${date}.json`, "application/json");
+  showToast("✅ Backup file downloaded to your PC");
+}
+
+// Download a specific Supabase backup entry as a local file
+async function downloadBackupFromSupabase(backupId) {
+  if (!supabaseClient) { showToast("No database connection"); return; }
+  showToast("⏳ Preparing download...");
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("backup_data, created_at")
+    .eq("id", backupId)
+    .single();
+
+  if (error || !data) { showToast("❌ Could not fetch backup"); return; }
+
+  const date = new Date(data.created_at).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const payload = {
+    exportedAt:  data.created_at,
+    exportedBy:  "Supabase backup",
+    appVersion:  "KHOPS_v2",
+    ...data.backup_data
+  };
+  downloadBlob(JSON.stringify(payload, null, 2), `kh-backup-supabase-${date}.json`, "application/json");
+  showToast("✅ Backup file downloaded");
+}
+
+// ─── Import from local file ───────────────────────────────────────────────────
+
+function triggerImport() {
+  document.getElementById("importFileInput").click();
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = ""; // allow re-selecting same file
+
+  // Parse JSON
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+  } catch {
+    setImportStatus("error", "❌ Could not read file. Make sure you selected a KH backup .json file.");
+    return;
+  }
+
+  // Validate
+  if (!backup.centers || !backup.entries || !backup.procedureSettings) {
+    setImportStatus("error", "❌ This file doesn't look like a KH backup — missing required fields.");
+    return;
+  }
+
+  const centreCount = backup.centers.length;
+  const entryCount  = Object.values(backup.entries).reduce((n, c) => n + Object.keys(c).length, 0);
+  const auditCount  = (backup.auditLog || []).length;
+  const exportedAt  = backup.exportedAt ? formatSavedAt(backup.exportedAt) : "unknown date";
+
+  const confirmed = window.confirm(
+    `Import this backup?\n\n` +
+    `Exported:      ${exportedAt}\n` +
+    `Centres:       ${centreCount}\n` +
+    `Daily entries: ${entryCount}\n` +
+    `Audit records: ${auditCount}\n\n` +
+    `⚠️ WARNING: This will OVERWRITE all current data in the app and database.\n` +
+    `This cannot be undone. Proceed?`
+  );
+  if (!confirmed) return;
+
+  setImportStatus("loading", "⏳ Restoring — please wait, do not close this tab...");
+
+  try {
+    // Apply to memory
+    centers           = backup.centers;
+    procedureSettings = backup.procedureSettings;
+    Object.keys(entries).forEach(k => delete entries[k]);
+    Object.assign(entries, backup.entries || {});
+    Object.keys(entryMeta).forEach(k => delete entryMeta[k]);
+    Object.assign(entryMeta, backup.entryMeta || {});
+    unlockRequests = backup.unlockRequests || [];
+    auditLog       = backup.auditLog       || [];
+
+    // Record the restore event in audit log
+    auditLog.push({
+      id:          Date.now(),
+      centreIndex: -1,
+      centreName:  "System",
+      date:        new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+      savedAt:     new Date().toISOString(),
+      savedBy:     "Admin (file restore)",
+      type:        "revert",
+      before:      {},
+      after:       { note: `Restored from local backup file exported ${exportedAt}` }
+    });
+
+    // Push to Supabase
+    if (supabaseClient) {
+      await Promise.all([
+        saveConfig(),
+        saveAllEntries(),
+        saveAllMeta(),
+        saveAllUnlockRequests(),
+        saveAllAuditLog()
+      ]);
+    }
+    saveLocalBackup();
+
+    // Re-render entire app
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    setReportDate(today);
+    refreshCenterRollups(reportDate);
+    refreshCenterLists();
+    renderConsolidated();
+    renderBars();
+    renderPayerSplit();
+    renderTargets();
+    renderUsers();
+    renderProcedures();
+    renderUnlockRequests();
+    renderAuditLog();
+    renderEntryForCurrentDate();
+    renderAdminReportPreview();
+    renderBackups();
+
+    setImportStatus("success",
+      `✅ Restore complete — ${centreCount} centres, ${entryCount} daily entries, ${auditCount} audit records loaded successfully.`
+    );
+    showToast("✅ Backup restored from file");
+
+  } catch (err) {
+    console.error("Import failed:", err);
+    setImportStatus("error", `❌ Restore failed: ${err.message || "unknown error"}. Your previous data is still safe.`);
+  }
+}
+
+function setImportStatus(type, message) {
+  const el = document.getElementById("importStatus");
+  if (!el) return;
+  const s = {
+    success: { bg: "#e6f7ee", border: "#a8d5b0", color: "#1b7f4b" },
+    error:   { bg: "#fff0f1", border: "#f5c6cb", color: "#b30000" },
+    loading: { bg: "#eff4ff", border: "#bfcfff", color: "#1e3a6e" }
+  }[type] || {};
+  el.innerHTML = `<div style="background:${s.bg};border:1px solid ${s.border};color:${s.color};
+    padding:12px 16px;border-radius:8px;font-weight:600;font-size:.875rem;margin-top:16px">
+    ${message}</div>`;
+}
+
+
 async function createBackup() {
   if (!supabaseClient) return;
 
@@ -3120,26 +3283,35 @@ async function restoreBackup(backupId) {
 }
 async function renderBackups() {
   const container = document.getElementById("backupList");
+  if (!container) return;
+
+  if (!supabaseClient) {
+    container.innerHTML = `<p style="color:var(--muted)">No database connection — Supabase backups unavailable. Use Export to File below.</p>`;
+    return;
+  }
+
+  container.innerHTML = `<p style="color:var(--muted);font-size:.85rem">Loading backups...</p>`;
   const backups = await loadBackups();
 
   if (!backups.length) {
-    container.innerHTML = "<p>No backups found</p>";
+    container.innerHTML = `<p style="color:var(--muted)">No Supabase backups yet. Click "Backup Now" to create one.</p>`;
     return;
   }
 
   container.innerHTML = backups.map(b => `
-  <div class="unlock-card">
-    <div class="unlock-card-head">
-      <div>
-        <strong>${new Date(b.created_at).toLocaleString()}</strong>
-        <span style="font-size:12px;color:gray;">Backup ID: ${b.id}</span>
+    <div class="unlock-card">
+      <div class="unlock-card-head">
+        <div>
+          <strong>${new Date(b.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</strong>
+          <span style="font-size:12px;color:var(--muted)">Backup ID: ${b.id}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
+          <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
+        </div>
       </div>
-      <button class="button secondary" onclick="restoreBackup(${b.id})">
-        Restore
-      </button>
     </div>
-  </div>
-`).join("");
+  `).join("");
 }
 
 async function ensureDailyBackup() {
