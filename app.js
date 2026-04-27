@@ -249,9 +249,9 @@ function deepCloneValue(value, fallback = null) {
 }
 
 function confirmRestoreAction(title, detail) {
-  const firstStep = window.confirm(`⚠️ ${title}\n\n${detail}\n\nDo you want to continue?`);
+  const firstStep = window.confirm(`${title}\n\n${detail}\n\nDo you want to continue?`);
   if (!firstStep) return false;
-  return window.confirm(`🔒 Final confirmation\n\n${title}\n\nPlease confirm once more to proceed.`);
+  return window.confirm(`Final confirmation\n\n${title}\n\nPlease confirm once more to proceed.`);
 }
 
 function writeAuditLog(centreIndex, date, before, after) {
@@ -327,7 +327,7 @@ function revertAuditEntry(auditId) {
     ]).catch(console.error);
   }
   renderAuditLog();
-  showToast(`↩️ Reverted ${log.centreName} / ${displayDate(log.date)}`);
+  showToast(`Reverted ${log.centreName} / ${displayDate(log.date)}`);
 }
 
 function getAppState() {
@@ -557,10 +557,10 @@ async function saveAll() {
       saveAllUnlockRequests(),
       saveAllAuditLog()
     ]);
-    showToast("✅ Data saved successfully");
+    showToast("Data saved successfully");
   } catch (err) {
     console.error("saveAll failed:", err);
-    showToast("❌ Save failed (network issue)");
+    showToast("Save failed due to a network issue");
   }
   await createBackup();
   await cleanupBackups();
@@ -576,10 +576,10 @@ async function persistEntry(centreIndex, date) {
       saveOneMeta(centreIndex, date),
       saveLatestAuditEntry()
     ]);
-    showToast("✅ Data saved successfully");
+    showToast("Data saved successfully");
   } catch (err) {
     console.error("persistEntry failed:", err);
-    showToast("❌ Save failed — check your connection");
+    showToast("Save failed. Check your connection");
   }
 }
 
@@ -1257,22 +1257,13 @@ function renderPendingAlert() {
   });
 
   if (missing.length === 0) {
-    container.innerHTML = `
-      <div style="background:#e6f7ee;padding:10px;border-radius:8px;font-weight:600;color:#1b7f4b">
-        ✅ All centres updated today
-      </div>
-    `;
+    container.innerHTML = `<div class="alert-banner success">All assigned centres have submitted today's data.</div>`;
     return;
   }
 
   const names = missing.map(i => centers[i].name).join(", ");
 
-  container.innerHTML = `
-    <div style="background:#ffe6e6;padding:12px;border-radius:8px;font-weight:700;color:#b30000">
-      ❌ ${missing.length} centre(s) pending today<br/>
-      <small style="font-weight:500">${names}</small>
-    </div>
-  `;
+  container.innerHTML = `<div class="alert-banner error">${missing.length} centre(s) pending for today's submission.<small>${names}</small></div>`;
 }
 
 function renderConsolidated() {
@@ -1304,8 +1295,8 @@ function renderConsolidated() {
 
 if (currentRole === "admin") {
   statusBadge = hasEntry
-    ? `<span style="color:green;font-weight:700">✔ Updated</span>`
-    : `<span style="color:red;font-weight:700">❌ Missing</span>`;
+    ? `<span class="entry-status updated">Updated today</span>`
+    : `<span class="entry-status missing">Pending today</span>`;
     }   
 
     const row = document.createElement("tr");
@@ -1313,7 +1304,7 @@ if (currentRole === "admin") {
     row.innerHTML = `
       <td>
         ${center.name}<br/>
-        <small>${statusBadge}</small>
+        ${statusBadge}
       </td>
       <td>${center.tillDate}</td>
       <td>${center.yesterday}</td>
@@ -1427,7 +1418,7 @@ function renderPayerSplit() {
   const generalPct = Math.round((totals.general / sum) * 100);
   const kaspPct = Math.round((totals.kasp / sum) * 100);
   const medisepPct = 100 - generalPct - kaspPct;
-  document.getElementById("payerDonut").style.background = `conic-gradient(var(--blue) 0 ${generalPct}%, var(--teal) ${generalPct}% ${generalPct + kaspPct}%, var(--purple) ${generalPct + kaspPct}% 100%)`;
+  document.getElementById("payerDonut").style.background = `conic-gradient(var(--blue) 0 ${generalPct}%, var(--teal) ${generalPct}% ${generalPct + kaspPct}%, #7a8797 ${generalPct + kaspPct}% 100%)`;
   document.getElementById("payerSplit").innerHTML = `
     <div class="split-item"><span>General</span><strong>${totals.general} (${generalPct}%)</strong></div>
     <div class="split-item"><span>KASP</span><strong>${totals.kasp} (${kaspPct}%)</strong></div>
@@ -1555,11 +1546,11 @@ function renderEntryForCurrentDate() {
       const pending = getPendingUnlock(loggedInCentreIndex, date);
       banner.innerHTML = pending
         ? `<div class="lock-banner locked">
-            🔒 <strong>${displayDate(date)}</strong> is locked.
+            <strong>${displayDate(date)}</strong> is locked.
             <span>Unlock request sent — waiting for admin approval.</span>
            </div>`
         : `<div class="lock-banner locked">
-            🔒 <strong>${displayDate(date)}</strong> is locked (past date).
+            <strong>${displayDate(date)}</strong> is locked (past date).
             <button class="button secondary" id="requestUnlockBtn">Request Edit Access</button>
            </div>`;
       banner.classList.remove("hidden");
@@ -1569,7 +1560,7 @@ function renderEntryForCurrentDate() {
     } else if (approved) {
       const unlock = getApprovedUnlock(loggedInCentreIndex, date);
       const timeLeft = unlock?.expiresAt ? ` — ${formatTimeRemaining(unlock.expiresAt)}` : "";
-      banner.innerHTML = `<div class="lock-banner unlocked">✅ <strong>${displayDate(date)}</strong> is unlocked for editing by admin approval${timeLeft}.</div>`;
+      banner.innerHTML = `<div class="lock-banner unlocked"><strong>${displayDate(date)}</strong> is unlocked for editing by admin approval${timeLeft}.</div>`;
       banner.classList.remove("hidden");
     } else {
       banner.classList.add("hidden");
@@ -1613,7 +1604,7 @@ function updateFromDailyEntry() {
 
   // Guard: disallow locked past dates
   if (isDateLocked(date, loggedInCentreIndex)) {
-    showToast("🔒 This date is locked. Request admin approval to edit past data.");
+    showToast("This date is locked. Request admin approval to edit past data.");
     return;
   }
 
@@ -3004,7 +2995,7 @@ function renderAuditLog() {
             <span>${formatSavedAt(log.savedAt)}</span>
             <span>by <strong>${escapeHtml(log.savedBy)}</strong></span>
             ${canRevert
-              ? `<button class="button secondary audit-revert-btn" data-revert-id="${log.id}">↩ Revert</button>`
+              ? `<button class="button secondary audit-revert-btn" data-revert-id="${log.id}">Revert</button>`
               : ""}
           </div>
         </div>
@@ -3213,8 +3204,8 @@ function resolveUnlock(id, status, durationMins = 0) {
   if (supabaseClient) saveOneUnlockRequest(req).catch(console.error);
   renderUnlockRequests();
   const label = status === "approved"
-    ? `✅ Approved for ${durationMins >= 60 ? durationMins / 60 + "h" : durationMins + "min"} — ${req.centreName} / ${displayDate(req.date)}`
-    : `❌ Rejected — ${req.centreName} / ${displayDate(req.date)}`;
+    ? `Approved for ${durationMins >= 60 ? durationMins / 60 + "h" : durationMins + "min"} - ${req.centreName} / ${displayDate(req.date)}`
+    : `Rejected - ${req.centreName} / ${displayDate(req.date)}`;
   showToast(label);
 }
 
@@ -3250,20 +3241,20 @@ function exportToFile() {
   };
   const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   downloadBlob(JSON.stringify(backup, null, 2), `kh-backup-${date}.json`, "application/json");
-  showToast("✅ Backup file downloaded to your PC");
+  showToast("Backup file downloaded");
 }
 
 // Download a specific Supabase backup entry as a local file
 async function downloadBackupFromSupabase(backupId) {
   if (!supabaseClient) { showToast("No database connection"); return; }
-  showToast("⏳ Preparing download...");
+  showToast("Preparing backup download");
   const { data, error } = await supabaseClient
     .from("app_backups")
     .select("backup_data, created_at")
     .eq("id", backupId)
     .single();
 
-  if (error || !data) { showToast("❌ Could not fetch backup"); return; }
+  if (error || !data) { showToast("Could not fetch the backup"); return; }
 
   const date = new Date(data.created_at).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const payload = {
@@ -3273,7 +3264,7 @@ async function downloadBackupFromSupabase(backupId) {
     ...data.backup_data
   };
   downloadBlob(JSON.stringify(payload, null, 2), `kh-backup-supabase-${date}.json`, "application/json");
-  showToast("✅ Backup file downloaded");
+  showToast("Backup file downloaded");
 }
 
 // ─── Import from local file ───────────────────────────────────────────────────
@@ -3292,13 +3283,13 @@ async function handleImportFile(event) {
   try {
     backup = JSON.parse(await file.text());
   } catch {
-    setImportStatus("error", "❌ Could not read file. Make sure you selected a KH backup .json file.");
+    setImportStatus("error", "Could not read the file. Make sure you selected a valid KH backup JSON file.");
     return;
   }
 
   // Validate
   if (!backup.centers || !backup.entries || !backup.procedureSettings) {
-    setImportStatus("error", "❌ This file doesn't look like a KH backup — missing required fields.");
+    setImportStatus("error", "This file does not appear to be a KH backup. Required fields are missing.");
     return;
   }
 
@@ -3313,12 +3304,12 @@ async function handleImportFile(event) {
     `Centres:       ${centreCount}\n` +
     `Daily entries: ${entryCount}\n` +
     `Audit records: ${auditCount}\n\n` +
-    `⚠️ WARNING: This will OVERWRITE all current data in the app and database.\n` +
+    `Warning: this will overwrite all current data in the app and database.\n` +
     `This cannot be undone. Proceed?`
   );
   if (!confirmed) return;
 
-  setImportStatus("loading", "⏳ Restoring — please wait, do not close this tab...");
+  setImportStatus("loading", "Restoring backup. Please wait and keep this tab open.");
 
   try {
     // Apply to memory
@@ -3374,13 +3365,13 @@ async function handleImportFile(event) {
     renderBackups();
 
     setImportStatus("success",
-      `✅ Restore complete — ${centreCount} centres, ${entryCount} daily entries, ${auditCount} audit records loaded successfully.`
+      `Restore complete. ${centreCount} centres, ${entryCount} daily entries, and ${auditCount} audit records were loaded successfully.`
     );
-    showToast("✅ Backup restored from file");
+    showToast("Backup restored from file");
 
   } catch (err) {
     console.error("Import failed:", err);
-    setImportStatus("error", `❌ Restore failed: ${err.message || "unknown error"}. Your previous data is still safe.`);
+    setImportStatus("error", `Restore failed: ${err.message || "unknown error"}. Your previous data is still safe.`);
   }
 }
 
@@ -3942,7 +3933,7 @@ async function compareBackup(backupId) {
 
   if (error || !data) {
     setPanelState("backupComparePreview", "error", "Comparison unavailable", "The selected backup could not be loaded for comparison.");
-    showToast("❌ Could not compare backup");
+    showToast("Could not compare the selected backup");
     return;
   }
 
@@ -4107,7 +4098,7 @@ async function previewRestore(backupId) {
 
   if (error || !data) {
     setPanelState("restorePreviewPanel", "error", "Restore preview unavailable", "The selected backup could not be loaded for preview.");
-    showToast("❌ Could not preview restore");
+    showToast("Could not preview the restore");
     return;
   }
 
@@ -4471,7 +4462,7 @@ async function restoreBackup(backupId) {
 
   if (previewError || !previewData) {
     setBackupStatus("error", `Restore failed for backup #${backupId}`, "The backup could not be loaded from Supabase.");
-    showToast("❌ Failed to load backup");
+    showToast("Failed to load the backup");
     return;
   }
 
@@ -4486,7 +4477,7 @@ async function restoreBackup(backupId) {
     `This will overwrite the full live app state with ${centreCount} centres, ${entryCount} daily entries, ${auditCount} audit records, and ${adminCount} admin account${adminCount === 1 ? "" : "s"}.`
   )) return;
 
-  showToast("⏳ Restoring backup...");
+  showToast("Restoring backup");
   setBackupStatus("loading", `Restoring backup #${backupId}`, "Overwriting the live app state with the selected backup.");
 
   const state = previewState;
@@ -4497,14 +4488,14 @@ async function restoreBackup(backupId) {
     await saveAll();
 
     setBackupStatus("success", `Backup #${backupId} restored`, "The full live state has been replaced successfully. Reloading now.");
-    showToast("✅ Backup restored");
+    showToast("Backup restored");
 
     location.reload();
 
   } catch (err) {
     console.error(err);
     setBackupStatus("error", `Restore failed for backup #${backupId}`, "The app could not persist the restored state.");
-    showToast("❌ Restore failed");
+    showToast("Restore failed");
   }
 }
 async function renderBackups() {
@@ -4544,12 +4535,12 @@ async function renderBackups() {
           <span style="display:block;font-size:12px;color:var(--muted)">Created by: ${escapeHtml(b.created_by || "Unknown")}</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="button secondary" onclick="compareBackup(${b.id})">🔥 Compare</button>
-          <button class="button secondary" onclick="previewRestore(${b.id})">👁 Preview Restore</button>
-          <button class="button secondary" onclick="openPartialRestore(${b.id})">🎯 Partial Restore</button>
-          <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
-          <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
-          <button class="button secondary" onclick="deleteBackup(${b.id})">🗑 Delete</button>
+          <button class="button secondary" onclick="compareBackup(${b.id})">Compare</button>
+          <button class="button secondary" onclick="previewRestore(${b.id})">Restore Preview</button>
+          <button class="button secondary" onclick="openPartialRestore(${b.id})">Centre Restore</button>
+          <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">Download</button>
+          <button class="button secondary" onclick="restoreBackup(${b.id})">Restore</button>
+          <button class="button secondary" onclick="deleteBackup(${b.id})">Delete</button>
         </div>
       </div>
     </div>

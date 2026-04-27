@@ -84,7 +84,7 @@
           <span>Backups</span>
           </button>
           <button class="nav-item superadmin-only" data-view="superadmin">
-            <span>⚙️ Super Admin</span>
+            <span>Super Admin</span>
           </button>
         </nav>
 
@@ -147,8 +147,7 @@
             </article>
           </div>
 
-	  <!-- ✅ ADD HERE -->
-  	  <div id="pendingAlert" style="margin-bottom:12px;"></div>
+          <div id="pendingAlert" style="margin-bottom:12px;"></div>
 
           <section class="panel">
             <div class="panel-head">
@@ -510,10 +509,10 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>☁️ Cloud Backups (Supabase)</h2>
+                <h2>Cloud Backups</h2>
                 <p>Automatic daily snapshots stored in Supabase. Kept for 90 days. You can download any snapshot as a file or restore it directly.</p>
               </div>
-              <button class="button primary" onclick="createBackup()">🔄 Backup Now</button>
+              <button class="button primary" onclick="createBackup()">Create Backup</button>
             </div>
             <p id="backupStatus" style="margin-bottom:10px;color:var(--muted);font-size:.85rem"></p>
             <div id="backupList"></div>
@@ -522,7 +521,7 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>🔥 Backup Comparison</h2>
+                <h2>Backup Comparison</h2>
                 <p>Compare a backup with the current live app state before restoring or downloading.</p>
               </div>
               <button class="button secondary" id="backupCompareClearBtn">Clear</button>
@@ -535,7 +534,7 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>🔥 Restore Preview</h2>
+                <h2>Restore Preview</h2>
                 <p>Preview exactly what a restore would apply before you overwrite the current live data.</p>
               </div>
               <button class="button secondary" id="restorePreviewClearBtn">Clear</button>
@@ -548,7 +547,7 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>🎯 Partial Restore</h2>
+                <h2>Centre Restore Preview</h2>
                 <p>Restore only one centre from a selected backup without overwriting the rest of the network.</p>
               </div>
               <button class="button secondary" id="partialRestoreClearBtn">Clear</button>
@@ -562,10 +561,10 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>⬇️ Export to File</h2>
+                <h2>Export to File</h2>
                 <p>Downloads the <strong>current live state</strong> of the entire app — all centres, every daily entry, procedures, audit log — as a single JSON file to your PC. This always includes the latest data regardless of when you last clicked "Backup Now".</p>
               </div>
-              <button class="button primary" onclick="exportToFile()">⬇ Download Backup File</button>
+              <button class="button primary" onclick="exportToFile()">Download Backup File</button>
             </div>
           </section>
 
@@ -573,10 +572,10 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>⬆️ Import from File</h2>
+                <h2>Import from File</h2>
                 <p>Restore from a previously downloaded backup file. This will overwrite all current data. Use only when recovering from data loss.</p>
               </div>
-              <button class="button secondary" onclick="triggerImport()">⬆ Select Backup File</button>
+              <button class="button secondary" onclick="triggerImport()">Select Backup File</button>
             </div>
             <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="handleImportFile(event)" />
             <div id="importStatus"></div>
@@ -631,7 +630,7 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>👥 Admin Accounts</h2>
+                <h2>Admin Accounts</h2>
                 <p>Add, remove, and assign centres to admin users. Each admin can only see and manage their assigned centres.</p>
               </div>
             </div>
@@ -662,7 +661,7 @@
           <section class="panel">
             <div class="panel-head">
               <div>
-                <h2>🛡️ Admin Action Log</h2>
+                <h2>Admin Action Log</h2>
                 <p>Every action taken by admins and super admin — unlock approvals, reverts, target changes, and account changes.</p>
               </div>
               <button class="button secondary" id="adminAuditClearFilter">Clear Filters</button>
