@@ -1991,11 +1991,16 @@ function addProcedure() {
 
 function addCenter() {
   const input = document.getElementById("newCentreName");
+  const companyInput = document.getElementById("newCentreCompany");
   const name = input.value.trim();
-  if (!name) return;
+  const company = companyInput?.value?.trim() || "";
+  if (!name || !company) {
+    showToast("Enter the centre name and choose whether it belongs to KH or Swizton");
+    return;
+  }
   centers.push({
     name,
-    company: activeCompany,
+    company,
     username: name.toLowerCase().replace(/\s+/g, ""),
     password: "1234",
     tillDate: 0,
@@ -2008,6 +2013,7 @@ function addCenter() {
     medisep: 0
   });
   input.value = "";
+  if (companyInput) companyInput.value = "";
   refreshCenterLists();
   renderTargets();
   renderUsers();
@@ -2225,6 +2231,9 @@ function setupAdminControls() {
   });
   document.getElementById("addCentreBtn").addEventListener("click", addCenter);
   document.getElementById("newCentreName").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addCenter();
+  });
+  document.getElementById("newCentreCompany")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") addCenter();
   });
 
