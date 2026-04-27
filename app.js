@@ -3762,6 +3762,12 @@ function deltaLabel(delta) {
   return "No change";
 }
 
+function differenceLabel(delta) {
+  if (delta > 0) return `${delta} more in backup`;
+  if (delta < 0) return `${Math.abs(delta)} more in live app`;
+  return "No difference";
+}
+
 function comparisonStatusLabel(row) {
   if (!row.current) return "Missing in current";
   if (!row.backup) return "Missing in backup";
@@ -3893,21 +3899,21 @@ function renderBackupComparison(backupMeta, backupState) {
         <span>Daily Entries</span>
         <strong>${backupEntryCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupEntryCount - currentEntryCount)}">
-          Current ${currentEntryCount} | Delta ${deltaLabel(backupEntryCount - currentEntryCount)}
+          In backup: ${backupEntryCount} | In live record: ${currentEntryCount}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Audit Records</span>
         <strong>${backupAuditCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupAuditCount - currentAuditCount)}">
-          Current ${currentAuditCount} | Delta ${deltaLabel(backupAuditCount - currentAuditCount)}
+          In backup: ${backupAuditCount} | In live record: ${currentAuditCount}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Admin Accounts</span>
         <strong>${backupAdminCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupAdminCount - currentAdminCount)}">
-          Current ${currentAdminCount} | Delta ${deltaLabel(backupAdminCount - currentAdminCount)}
+          In backup: ${backupAdminCount} | In live record: ${currentAdminCount}
         </div>
       </div>
     </div>
@@ -4051,21 +4057,21 @@ function renderRestorePreview(backupMeta, backupState) {
         <span>Daily Entries To Restore</span>
         <strong>${backupEntryCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupEntryCount - currentEntryCount)}">
-          Current ${currentEntryCount} | Delta ${deltaLabel(backupEntryCount - currentEntryCount)}
+          In backup: ${backupEntryCount} | In live record: ${currentEntryCount}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Audit Records To Restore</span>
         <strong>${backupAuditCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupAuditCount - currentAuditCount)}">
-          Current ${currentAuditCount} | Delta ${deltaLabel(backupAuditCount - currentAuditCount)}
+          In backup: ${backupAuditCount} | In live record: ${currentAuditCount}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Admin Accounts To Restore</span>
         <strong>${backupAdminCount}</strong>
         <div class="backup-compare-delta ${deltaClass(backupAdminCount - currentAdminCount)}">
-          Current ${currentAdminCount} | Delta ${deltaLabel(backupAdminCount - currentAdminCount)}
+          In backup: ${backupAdminCount} | In live record: ${currentAdminCount}
         </div>
       </div>
     </div>
@@ -4195,21 +4201,21 @@ function renderPartialRestoreSummary() {
         <span>Daily Entries</span>
         <strong>${backupEntries}</strong>
         <div class="backup-compare-delta ${deltaClass(backupEntries - currentEntries)}">
-          Current ${currentEntries} | Delta ${deltaLabel(backupEntries - currentEntries)}
+          In backup: ${backupEntries} | In live record: ${currentEntries}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Audit Records</span>
         <strong>${backupAudit}</strong>
         <div class="backup-compare-delta ${deltaClass(backupAudit - currentAudit)}">
-          Current ${currentAudit} | Delta ${deltaLabel(backupAudit - currentAudit)}
+          In backup: ${backupAudit} | In live record: ${currentAudit}
         </div>
       </div>
       <div class="backup-compare-card">
         <span>Unlock Requests</span>
         <strong>${backupUnlocks}</strong>
         <div class="backup-compare-delta ${deltaClass(backupUnlocks - currentUnlocks)}">
-          Current ${currentUnlocks} | Delta ${deltaLabel(backupUnlocks - currentUnlocks)}
+          In backup: ${backupUnlocks} | In live record: ${currentUnlocks}
         </div>
       </div>
     </div>
