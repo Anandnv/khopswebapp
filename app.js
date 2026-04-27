@@ -3638,6 +3638,104 @@ function buildCentreComparisonRows(currentState, backupState) {
   });
 }
 
+function procedureStateSummary(state, procedureName) {
+  const procedureExists = (state?.procedureSettings || []).some((procedure) => procedure?.name === procedureName);
+  if (!procedureExists) return null;
+
+  let general = 0;
+  let kasp = 0;
+  let medisep = 0;
+  let datesCount = 0;
+
+  Object.values(state?.entries || {}).forEach((centreEntries) => {
+    Object.values(centreEntries || {}).forEach((entry) => {
+      const procedureEntry = entry?.procedures?.[procedureName];
+      if (!procedureEntry) return;
+      const rowGeneral = currencySafeNumber(procedureEntry.general);
+      const rowKasp = currencySafeNumber(procedureEntry.kasp);
+      const rowMedisep = currencySafeNumber(procedureEntry.medisep);
+      if (rowGeneral || rowKasp || rowMedisep) {
+        datesCount += 1;
+      }
+      general += rowGeneral;
+      kasp += rowKasp;
+      medisep += rowMedisep;
+    });
+  });
+
+  const setting = (state?.procedureSettings || []).find((procedure) => procedure?.name === procedureName) || {};
+  return {
+    name: procedureName,
+    counted: !!setting.counted,
+    isCag: !!setting.isCag,
+    active: !!setting.active,
+    general,
+    kasp,
+    medisep,
+    total: general + kasp + medisep,
+    datesCount
+  };
+}
+
+function formatProcedureSummary(summary) {
+  if (!summary) return "Missing";
+  return `Total ${summary.total} | General ${summary.general} | KASP ${summary.kasp} | Medisep ${summary.medisep} | Dates ${summary.datesCount}`;
+}
+
+function buildProcedureDiffText(currentSummary, backupSummary) {
+  if (!currentSummary && backupSummary) return "Missing in current app";
+  if (currentSummary && !backupSummary) return "Missing in backup";
+  if (!currentSummary && !backupSummary) return "No data";
+
+  const diffs = [];
+  const fields = [
+    ["total", "Total"],
+    ["general", "General"],
+    ["kasp", "KASP"],
+    ["medisep", "Medisep"],
+    ["datesCount", "Saved dates"]
+  ];
+
+  fields.forEach(([key, label]) => {
+    if (currentSummary[key] !== backupSummary[key]) {
+      diffs.push(`${label}: ${backupSummary[key]} -> ${currentSummary[key]}`);
+    }
+  });
+
+  if (currentSummary.counted !== backupSummary.counted) {
+    diffs.push(`Counted: ${backupSummary.counted ? "Yes" : "No"} -> ${currentSummary.counted ? "Yes" : "No"}`);
+  }
+  if (currentSummary.isCag !== backupSummary.isCag) {
+    diffs.push(`CAG type: ${backupSummary.isCag ? "Yes" : "No"} -> ${currentSummary.isCag ? "Yes" : "No"}`);
+  }
+  if (currentSummary.active !== backupSummary.active) {
+    diffs.push(`Active: ${backupSummary.active ? "Yes" : "No"} -> ${currentSummary.active ? "Yes" : "No"}`);
+  }
+
+  return diffs.length ? diffs.join(" | ") : "No field change";
+}
+
+function buildProcedureComparisonRows(currentState, backupState) {
+  const currentNames = (currentState?.procedureSettings || []).map((procedure) => procedure?.name).filter(Boolean);
+  const backupNames = (backupState?.procedureSettings || []).map((procedure) => procedure?.name).filter(Boolean);
+  const keys = [...new Set([...currentNames, ...backupNames])].sort();
+  return keys.map((key) => {
+    const currentSummary = procedureStateSummary(currentState, key);
+    const backupSummary = procedureStateSummary(backupState, key);
+    const currentSignature = currentSummary ? stableStringify(currentSummary) : null;
+    const backupSignature = backupSummary ? stableStringify(backupSummary) : null;
+    return {
+      key,
+      current: !!currentSummary,
+      backup: !!backupSummary,
+      changed: currentSignature !== backupSignature,
+      currentText: formatProcedureSummary(currentSummary),
+      backupText: formatProcedureSummary(backupSummary),
+      diffText: buildProcedureDiffText(currentSummary, backupSummary)
+    };
+  });
+}
+
 function buildComparisonRows(currentList, backupList, keyField = "name", projector = (item) => item) {
   const currentMap = new Map((currentList || []).map((item) => [item?.[keyField], item]));
   const backupMap = new Map((backupList || []).map((item) => [item?.[keyField], item]));
@@ -3688,12 +3786,7 @@ function renderBackupComparison(backupMeta, backupState) {
   const backupAdminCount = countAdmins(backupState);
 
   const centreRows = buildCentreComparisonRows(currentState, backupState);
-  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name", (item) => item ? {
-    name: item.name,
-    counted: !!item.counted,
-    isCag: !!item.isCag,
-    active: !!item.active
-  } : null);
+  const procedureRows = buildProcedureComparisonRows(currentState, backupState);
   const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username", (item) => item ? {
     name: item.name,
     username: item.username,
@@ -3726,6 +3819,38 @@ function renderBackupComparison(backupMeta, backupState) {
                 </tr>
               `).join("")
               : `<tr><td colspan="5">No centres to compare.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+
+  const procedureSection = `
+    <details class="backup-compare-section">
+      <summary>Procedures</summary>
+      <table class="backup-compare-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Current</th>
+            <th>Backup</th>
+            <th>Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            procedureRows.length
+              ? procedureRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText)}</td>
+                  <td>${escapeHtml(row.backupText)}</td>
+                  <td>${escapeHtml(row.diffText)}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="5">No procedures to compare.</td></tr>`
           }
         </tbody>
       </table>
@@ -3792,7 +3917,7 @@ function renderBackupComparison(backupMeta, backupState) {
       ${backupMeta.created_by ? `by ${escapeHtml(backupMeta.created_by)}` : ""}.
     </p>
     ${centreSection}
-    ${section("Procedures", procedureRows, "Current", "Backup")}
+    ${procedureSection}
     ${section("Admin Accounts", adminRows, "Current", "Backup")}
   `;
 }
@@ -3838,12 +3963,7 @@ function renderRestorePreview(backupMeta, backupState) {
   const backupAdminCount = countAdmins(backupState);
 
   const centreRows = buildCentreComparisonRows(currentState, backupState);
-  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name", (item) => item ? {
-    name: item.name,
-    counted: !!item.counted,
-    isCag: !!item.isCag,
-    active: !!item.active
-  } : null);
+  const procedureRows = buildProcedureComparisonRows(currentState, backupState);
   const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username", (item) => item ? {
     name: item.name,
     username: item.username,
@@ -3872,6 +3992,30 @@ function renderRestorePreview(backupMeta, backupState) {
                 </tr>
               `).join("")
               : `<tr><td colspan="5">No centres to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+
+  const procedureSection = `
+    <details class="backup-compare-section">
+      <summary>Procedures Affected (${changedProcedures})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Name</th><th>Status</th><th>Current</th><th>Backup</th><th>Difference</th></tr></thead>
+        <tbody>
+          ${
+            procedureRows.length
+              ? procedureRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText)}</td>
+                  <td>${escapeHtml(row.backupText)}</td>
+                  <td>${escapeHtml(row.diffText)}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="5">No procedures to preview.</td></tr>`
           }
         </tbody>
       </table>
@@ -3938,7 +4082,7 @@ function renderRestorePreview(backupMeta, backupState) {
       </p>
     </div>
     ${centreSection}
-    ${section("Procedures Affected", procedureRows)}
+    ${procedureSection}
     ${section("Admin Accounts Affected", adminRows)}
   `;
 }
