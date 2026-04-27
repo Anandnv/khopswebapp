@@ -3589,6 +3589,34 @@ function formatCentreSummary(summary) {
   return `Target ${summary.target} | Dates ${summary.datesCount} | Intv ${summary.interventionTotal} | CAG ${summary.cagTotal} | OP ${summary.opTotal} | IP ${summary.ipTotal} | Last ${summary.latestDate}`;
 }
 
+function buildCentreDiffText(currentSummary, backupSummary) {
+  if (!currentSummary && backupSummary) return "Missing in current app";
+  if (currentSummary && !backupSummary) return "Missing in backup";
+  if (!currentSummary && !backupSummary) return "No data";
+
+  const diffs = [];
+  const fields = [
+    ["target", "Target"],
+    ["datesCount", "Saved dates"],
+    ["interventionTotal", "Intervention"],
+    ["cagTotal", "CAG"],
+    ["opTotal", "OP"],
+    ["ipTotal", "IP"]
+  ];
+
+  fields.forEach(([key, label]) => {
+    if (currentSummary[key] !== backupSummary[key]) {
+      diffs.push(`${label}: ${backupSummary[key]} -> ${currentSummary[key]}`);
+    }
+  });
+
+  if (currentSummary.latestDate !== backupSummary.latestDate) {
+    diffs.push(`Last date: ${backupSummary.latestDate} -> ${currentSummary.latestDate}`);
+  }
+
+  return diffs.length ? diffs.join(" | ") : "No field change";
+}
+
 function buildCentreComparisonRows(currentState, backupState) {
   const currentNames = (currentState?.centers || []).map((centre) => centre?.name).filter(Boolean);
   const backupNames = (backupState?.centers || []).map((centre) => centre?.name).filter(Boolean);
@@ -3604,7 +3632,8 @@ function buildCentreComparisonRows(currentState, backupState) {
       backup: !!backupSummary,
       changed: currentSignature !== backupSignature,
       currentText: formatCentreSummary(currentSummary),
-      backupText: formatCentreSummary(backupSummary)
+      backupText: formatCentreSummary(backupSummary),
+      diffText: buildCentreDiffText(currentSummary, backupSummary)
     };
   });
 }
@@ -3671,6 +3700,38 @@ function renderBackupComparison(backupMeta, backupState) {
     assignedCentres: [...(item.assignedCentres || [])].sort()
   } : null);
 
+  const centreSection = `
+    <details class="backup-compare-section">
+      <summary>Centres</summary>
+      <table class="backup-compare-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Current</th>
+            <th>Backup</th>
+            <th>Difference</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            centreRows.length
+              ? centreRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText)}</td>
+                  <td>${escapeHtml(row.backupText)}</td>
+                  <td>${escapeHtml(row.diffText)}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="5">No centres to compare.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+
   const section = (title, rows, currentLabel, backupLabel) => `
     <details class="backup-compare-section">
       <summary>${title}</summary>
@@ -3730,7 +3791,7 @@ function renderBackupComparison(backupMeta, backupState) {
       ${new Date(backupMeta.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
       ${backupMeta.created_by ? `by ${escapeHtml(backupMeta.created_by)}` : ""}.
     </p>
-    ${section("Centres", centreRows, "Current", "Backup")}
+    ${centreSection}
     ${section("Procedures", procedureRows, "Current", "Backup")}
     ${section("Admin Accounts", adminRows, "Current", "Backup")}
   `;
@@ -3793,6 +3854,30 @@ function renderRestorePreview(backupMeta, backupState) {
   const changedProcedures = procedureRows.filter((row) => row.changed).length;
   const changedAdmins = adminRows.filter((row) => row.changed).length;
 
+  const centreSection = `
+    <details class="backup-compare-section">
+      <summary>Centres Affected (${changedCentres})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Name</th><th>Status</th><th>Current</th><th>Backup</th><th>Difference</th></tr></thead>
+        <tbody>
+          ${
+            centreRows.length
+              ? centreRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td class="${comparisonStatusClass(row)}">${comparisonStatusLabel(row)}</td>
+                  <td>${escapeHtml(row.currentText)}</td>
+                  <td>${escapeHtml(row.backupText)}</td>
+                  <td>${escapeHtml(row.diffText)}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="5">No centres to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+
   const section = (title, rows) => `
     <details class="backup-compare-section">
       <summary>${title} (${rows.filter((row) => row.changed).length})</summary>
@@ -3852,7 +3937,7 @@ function renderRestorePreview(backupMeta, backupState) {
         Restoring this backup will overwrite the current live state with the values shown above.
       </p>
     </div>
-    ${section("Centres Affected", centreRows)}
+    ${centreSection}
     ${section("Procedures Affected", procedureRows)}
     ${section("Admin Accounts Affected", adminRows)}
   `;
