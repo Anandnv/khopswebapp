@@ -3598,6 +3598,155 @@ function clearBackupComparison() {
   preview.innerHTML = `<p style="color:var(--muted)">Choose “Compare” on any backup to inspect before-vs-after differences.</p>`;
 }
 
+function renderRestorePreview(backupMeta, backupState) {
+  const panel = document.getElementById("restorePreviewPanel");
+  if (!panel) return;
+
+  const currentState = getAppState();
+  const currentEntryCount = countDailyEntries(currentState);
+  const backupEntryCount = countDailyEntries(backupState);
+  const currentAuditCount = countAuditEntries(currentState);
+  const backupAuditCount = countAuditEntries(backupState);
+  const currentAdminCount = countAdmins(currentState);
+  const backupAdminCount = countAdmins(backupState);
+
+  const centreRows = buildComparisonRows(currentState.centers, backupState.centers, "name");
+  const procedureRows = buildComparisonRows(currentState.procedureSettings, backupState.procedureSettings, "name");
+  const adminRows = buildComparisonRows(currentState.admins, backupState.admins, "username");
+
+  const changedCentres = centreRows.filter((row) => row.current !== row.backup).length;
+  const changedProcedures = procedureRows.filter((row) => row.current !== row.backup).length;
+  const changedAdmins = adminRows.filter((row) => row.current !== row.backup).length;
+
+  panel.innerHTML = `
+    <div class="backup-compare-grid">
+      <div class="backup-compare-card">
+        <span>Daily Entries To Restore</span>
+        <strong>${backupEntryCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupEntryCount - currentEntryCount)}">
+          Current ${currentEntryCount} | Delta ${deltaLabel(backupEntryCount - currentEntryCount)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Audit Records To Restore</span>
+        <strong>${backupAuditCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupAuditCount - currentAuditCount)}">
+          Current ${currentAuditCount} | Delta ${deltaLabel(backupAuditCount - currentAuditCount)}
+        </div>
+      </div>
+      <div class="backup-compare-card">
+        <span>Admin Accounts To Restore</span>
+        <strong>${backupAdminCount}</strong>
+        <div class="backup-compare-delta ${deltaClass(backupAdminCount - currentAdminCount)}">
+          Current ${currentAdminCount} | Delta ${deltaLabel(backupAdminCount - currentAdminCount)}
+        </div>
+      </div>
+    </div>
+    <div class="backup-compare-card" style="margin-bottom:12px">
+      <span>Restore Impact Summary</span>
+      <strong>Backup #${backupMeta.id}</strong>
+      <div class="backup-compare-delta">
+        ${changedCentres} centre changes, ${changedProcedures} procedure changes, ${changedAdmins} admin account changes
+      </div>
+      <p style="margin:10px 0 0;color:var(--muted)">
+        Created ${new Date(backupMeta.created_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+        ${backupMeta.created_by ? `by ${escapeHtml(backupMeta.created_by)}` : ""}.
+        Restoring this backup will overwrite the current live state with the values shown above.
+      </p>
+    </div>
+    <details class="backup-compare-section">
+      <summary>Centres Affected (${changedCentres})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Centre</th><th>Current</th><th>Backup</th></tr></thead>
+        <tbody>
+          ${
+            centreRows.length
+              ? centreRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td>${row.current ? "Present" : "Missing"}</td>
+                  <td>${row.backup ? "Present" : "Missing"}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="3">No centres to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+    <details class="backup-compare-section">
+      <summary>Procedures Affected (${changedProcedures})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Procedure</th><th>Current</th><th>Backup</th></tr></thead>
+        <tbody>
+          ${
+            procedureRows.length
+              ? procedureRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td>${row.current ? "Present" : "Missing"}</td>
+                  <td>${row.backup ? "Present" : "Missing"}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="3">No procedures to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+    <details class="backup-compare-section">
+      <summary>Admin Accounts Affected (${changedAdmins})</summary>
+      <table class="backup-compare-table">
+        <thead><tr><th>Admin</th><th>Current</th><th>Backup</th></tr></thead>
+        <tbody>
+          ${
+            adminRows.length
+              ? adminRows.map((row) => `
+                <tr>
+                  <td>${escapeHtml(row.key)}</td>
+                  <td>${row.current ? "Present" : "Missing"}</td>
+                  <td>${row.backup ? "Present" : "Missing"}</td>
+                </tr>
+              `).join("")
+              : `<tr><td colspan="3">No admin accounts to preview.</td></tr>`
+          }
+        </tbody>
+      </table>
+    </details>
+  `;
+}
+
+async function previewRestore(backupId) {
+  if (!supabaseClient) {
+    showToast("No database connection");
+    return;
+  }
+  const panel = document.getElementById("restorePreviewPanel");
+  if (panel) {
+    panel.innerHTML = `<p style="color:var(--muted)">Loading restore preview...</p>`;
+  }
+  const { data, error } = await supabaseClient
+    .from("app_backups")
+    .select("id, created_at, created_by, backup_data")
+    .eq("id", backupId)
+    .single();
+
+  if (error || !data) {
+    if (panel) {
+      panel.innerHTML = `<p style="color:var(--red)">Could not load restore preview.</p>`;
+    }
+    showToast("❌ Could not preview restore");
+    return;
+  }
+
+  renderRestorePreview(data, data.backup_data || {});
+  showToast(`Restore preview ready for backup #${backupId}`);
+}
+
+function clearRestorePreview() {
+  const panel = document.getElementById("restorePreviewPanel");
+  if (!panel) return;
+  panel.innerHTML = `<p style="color:var(--muted)">Choose “Preview Restore” on any backup to inspect what would be restored.</p>`;
+}
+
 // Restore backup
 async function restoreBackup(backupId) {
   if (!confirm("⚠️ This will overwrite ALL current data. Continue?")) return;
@@ -3657,6 +3806,7 @@ async function renderBackups() {
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="button secondary" onclick="compareBackup(${b.id})">🔥 Compare</button>
+          <button class="button secondary" onclick="previewRestore(${b.id})">👁 Preview Restore</button>
           <button class="button secondary" onclick="downloadBackupFromSupabase(${b.id})">⬇ Download</button>
           <button class="button secondary" onclick="restoreBackup(${b.id})">↩ Restore</button>
         </div>
@@ -3712,6 +3862,7 @@ async function init() {
   setupAdminControls();
   setupSuperAdminControls();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
+  document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
 
   // Ensure entry date input always starts on today
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
