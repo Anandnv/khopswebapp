@@ -1264,9 +1264,24 @@ function swiztonTotalProcedure(entry, type) {
   return currencySafeNumber(entry[totalKey]) || currencySafeNumber(entry[doneKey]);
 }
 
+// Maps from consolidated column key → the dedicated manual-entry field name
+// (used when the admin sets the mapping dropdown to "Blank / Manual later")
+const SWIZTON_MANUAL_FIELD_MAP = {
+  ufeTotalProcedures:      "ufeTotalProcedureDone",
+  vericoseTotalProcedures: "vericoseTotalProcedureDone",
+  ufeDigitalProcedures:    "ufeProcedureDone",
+  vericoseDigitalProcedures: "vericoseProcedureDone"
+};
+
 function swiztonMappedValue(entry, columnKey) {
   const sourceKey = swiztonConsolidatedMapping[columnKey];
-  if (!sourceKey) return "";
+  // If no mapping selected (manual mode), read from the dedicated manual field for
+  // this column (if one exists), otherwise return 0 so the cell is editable/blank.
+  if (!sourceKey) {
+    const manualField = SWIZTON_MANUAL_FIELD_MAP[columnKey];
+    if (manualField) return currencySafeNumber(entry[manualField]);
+    return "";
+  }
   return currencySafeNumber(entry[sourceKey]);
 }
 
@@ -1498,37 +1513,39 @@ function renderSwiztonDashboard() {
   toggleCompanyDashboardSections();
   const rows = getSwiztonRows();
   const totals = swiztonTotals(rows);
-  const consolidatedRows = rows.map(swiztonConsolidatedRow);
   const tbody = document.querySelector("#swiztonConsolidatedTable tbody");
   const tfoot = document.querySelector("#swiztonConsolidatedTable tfoot");
   if (!tbody || !tfoot) return;
-  renderSwiztonMappingGrid();
+  renderSwiztonMappingGrid(); // hides the grid
   updateSwiztonEntryPreviews();
 
-  tbody.innerHTML = consolidatedRows.length
-    ? consolidatedRows.map((row) => `
-        <tr>
-          <td>${row.slNo}</td>
-          <td>${escapeHtml(row.month || "")}</td>
-          <td>${escapeHtml(row.centre)}</td>
-          <td>${escapeHtml(row.campaign)}</td>
-          <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
-          <td>${row.ufeLeadsGenerated}</td>
-          <td>${row.vericoseLeadsGenerated}</td>
-          <td>${row.ufeOpGenerated}</td>
-          <td>${row.vericoseOpGenerated}</td>
-          <td>${row.ufeAdvices}</td>
-          <td>${row.vericoseAdvices}</td>
-          <td>${row.ufeDigitalProcedures}</td>
-          <td>${row.vericoseDigitalProcedures}</td>
-          <td>${row.ufeTotalProcedures}</td>
-          <td>${row.vericoseTotalProcedures}</td>
-          <td>
-            <button class="button secondary" data-swizton-edit="${row.id}">Edit</button>
-            <button class="button secondary" data-swizton-delete="${row.id}">Delete</button>
-          </td>
-        </tr>
-      `).join("")
+  tbody.innerHTML = rows.length
+    ? rows.map((entry, i) => {
+        const row = swiztonConsolidatedRow(entry, i);
+        return `
+          <tr>
+            <td>${row.slNo}</td>
+            <td>${escapeHtml(row.month || "")}</td>
+            <td>${escapeHtml(row.centre)}</td>
+            <td>${escapeHtml(row.campaign)}</td>
+            <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "ufeLeadsGenerated")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "vericoseLeadsGenerated")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "ufeOpGenerated")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "vericoseOpGenerated")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "ufeAdvices")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "vericoseAdvices")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "ufeDigitalProcedures")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "vericoseDigitalProcedures")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "ufeTotalProcedures")}</td>
+            <td>${swiztonConsolidatedCellValue(entry, "vericoseTotalProcedures")}</td>
+            <td>
+              <button class="button secondary" data-swizton-edit="${row.id}">Edit</button>
+              <button class="button secondary" data-swizton-delete="${row.id}">Delete</button>
+            </td>
+          </tr>
+        `;
+      }).join("")
     : `<tr><td colspan="16" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries for the selected month.</td></tr>`;
 
   tfoot.innerHTML = `
@@ -1561,31 +1578,42 @@ function renderSwiztonDashboard() {
   tbody.querySelectorAll("[data-swizton-delete]").forEach((button) => {
     button.addEventListener("click", () => deleteSwiztonEntry(Number(button.dataset.swiztonDelete)));
   });
+
+  // Wire manual-entry inputs: save on change directly into the entry object
+  tbody.querySelectorAll(".sw-manual-input").forEach((input) => {
+    input.addEventListener("change", () => {
+      const entryId = Number(input.dataset.entryId);
+      const field = input.dataset.manualField;
+      const entryObj = swiztonEntries.find((e) => e.id === entryId);
+      if (entryObj) {
+        entryObj[field] = currencySafeNumber(input.value);
+        persistSoon();
+        // Re-render totals footer only (avoid full re-render which would reset inputs)
+        const updatedTotals = swiztonTotals(getSwiztonRows());
+        tfoot.querySelector(`td:nth-child(10)`).textContent = updatedTotals.ufeTotalProcedures;
+        tfoot.querySelector(`td:nth-child(11)`).textContent = updatedTotals.vericoseTotalProcedures;
+      }
+    });
+  });
 }
 
 function renderSwiztonMappingGrid() {
+  // Mapping grid is hidden. Mappings are persisted but not shown in the UI.
   const grid = document.getElementById("swiztonMappingGrid");
-  if (!grid) return;
-  grid.innerHTML = SWIZTON_CONSOLIDATED_COLUMNS.map((column) => `
-    <label>
-      <span>${escapeHtml(column.label)}</span>
-      <select data-swizton-map="${column.key}">
-        ${SWIZTON_SOURCE_OPTIONS.map((option) => `
-          <option value="${option.value}" ${swiztonConsolidatedMapping[column.key] === option.value ? "selected" : ""}>
-            ${escapeHtml(option.label)}
-          </option>
-        `).join("")}
-      </select>
-    </label>
-  `).join("");
-  grid.querySelectorAll("[data-swizton-map]").forEach((select) => {
-    select.addEventListener("change", () => {
-      swiztonConsolidatedMapping[select.dataset.swiztonMap] = select.value;
-      renderSwiztonDashboard();
-      renderAdminReportPreview();
-      persistSoon();
-    });
-  });
+  if (grid) grid.classList.add("hidden");
+}
+
+function swiztonConsolidatedCellValue(entry, columnKey) {
+  const row = swiztonConsolidatedRow(entry, 0);
+  const sourceKey = swiztonConsolidatedMapping[columnKey];
+  if (!sourceKey) {
+    // Manual mode: render an editable number input bound to the dedicated field
+    const manualField = SWIZTON_MANUAL_FIELD_MAP[columnKey];
+    const field = manualField || columnKey;
+    const val = currencySafeNumber(entry[field]);
+    return `<input type="number" min="0" class="sw-manual-input" data-entry-id="${entry.id}" data-manual-field="${field}" value="${val}" style="width:70px;height:30px;text-align:center" />`;
+  }
+  return row[columnKey];
 }
 
 function swiztonPercent(numerator, denominator) {
@@ -2945,14 +2973,20 @@ function swiztonRowsToCsv(rows) {
     return [item.slNo, item.month, item.centre, item.campaign, item.campaignDate ? displayDate(item.campaignDate) : "", item.ufeLeadsGenerated, item.vericoseLeadsGenerated, item.ufeOpGenerated, item.vericoseOpGenerated, item.ufeAdvices, item.vericoseAdvices, item.ufeDigitalProcedures, item.vericoseDigitalProcedures, item.ufeTotalProcedures, item.vericoseTotalProcedures];
   });
   const consolidatedTotalRow = ["TOTAL", "", "", "", "", totals.ufeLeadsGenerated, totals.vericoseLeadsGenerated, totals.ufeOpGenerated, totals.vericoseOpGenerated, totals.ufeAdvices, totals.vericoseAdvices, totals.ufeDigitalProcedures, totals.vericoseDigitalProcedures, totals.ufeTotalProcedures, totals.vericoseTotalProcedures];
-  const sections = [
-    ["Leads Entry", leadsHeader, ...leadsRows],
-    [],
-    ["Advices Entry", adviceHeader, ...adviceRows],
-    [],
-    ["Consolidated Report", consolidatedHeader, ...consolidatedRows, consolidatedTotalRow]
-  ];
-  return sections.map((row) => row.map(csvEscape).join(",")).join("\n");
+
+  // Fix: build each section as its own set of rows, then join with blank separator lines.
+  // The old code spread everything into one flat array, making each section a single broken CSV row.
+  function sectionToLines(label, header, dataRows) {
+    return [[label], header, ...dataRows].map((row) => row.map(csvEscape).join(","));
+  }
+
+  return [
+    ...sectionToLines("Leads Entry", leadsHeader, leadsRows),
+    "",
+    ...sectionToLines("Advices Entry", adviceHeader, adviceRows),
+    "",
+    ...sectionToLines("Consolidated Report", consolidatedHeader, [...consolidatedRows, consolidatedTotalRow])
+  ].join("\n");
 }
 
 function downloadSwiztonCsvReport() {
