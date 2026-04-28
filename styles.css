@@ -718,21 +718,124 @@ select:focus, input:focus {
   letter-spacing: .04em;
 }
 
+/* ─── Swizton entry form ─────────────────────────────────────────────────── */
 .swizton-form {
   display: grid;
-  gap: 18px;
+  gap: 20px;
   margin-bottom: 20px;
 }
 
-/* Override filter-grid columns for Swizton common fields — 4 items not 5 */
+/* 4-column common fields row */
 .swizton-common-fields {
-  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
-.swizton-entry-sections {
+.swizton-common-fields label {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 5px;
+}
+
+.swizton-common-fields span {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.swizton-common-fields input {
+  width: 100%;
+  height: 38px;
+}
+
+/* 2-column section grid */
+.swizton-section-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.swizton-section-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #fff;
+}
+
+.swizton-section-head {
+  padding: 10px 16px;
+  font-weight: 800;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.swizton-section-head.ufe {
+  background: #e8f0fb;
+  color: #1e3a6e;
+  border-bottom: 2px solid #bfd1ff;
+}
+
+.swizton-section-head.vericose {
+  background: #e8f7f0;
+  color: #1a5c3a;
+  border-bottom: 2px solid #9fd4bb;
+}
+
+.swizton-fields {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+}
+
+.swizton-fields label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.swizton-fields label:nth-child(even) { border-right: none; }
+.swizton-fields label:nth-last-child(-n+2) { border-bottom: none; }
+
+.swizton-fields span {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+.swizton-fields input {
+  width: 80px;
+  height: 30px;
+  text-align: right;
+  font-size: .85rem;
+  flex-shrink: 0;
+}
+
+.sw-calc-preview {
+  width: 80px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f4f9;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: .85rem;
+  color: var(--blue);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.sw-common-preview {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .entry-subpanel {
@@ -748,44 +851,8 @@ select:focus, input:focus {
   margin-bottom: 12px;
 }
 
-/* Swizton tables scroll independently — don't blow out the panel */
-.swizton-entry-table {
-  min-width: 900px !important;
-  font-size: .78rem;
-}
-
-.swizton-entry-table.advices {
-  min-width: 1100px !important;
-}
-
-.swizton-entry-table input {
-  width: 68px;
-  height: 30px;
-  padding: 0 6px;
-  text-align: right;
-  font-size: .78rem;
-}
-
-.swizton-entry-table td {
-  white-space: nowrap;
-  padding: 6px 8px;
-}
-
-.swizton-entry-table th {
-  font-size: .68rem;
-  padding: 6px 8px;
-  white-space: normal;
-  word-break: break-word;
-  min-width: 72px;
-}
-
-.sw-common-preview {
-  color: var(--muted);
-  font-weight: 700;
-}
-
 #swiztonMappingGrid {
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .report-preview-grid {
@@ -1041,7 +1108,7 @@ select:focus, input:focus {
   :root { --sidebar-w: 240px; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .report-preview-grid { grid-template-columns: 1fr; }
-  .swizton-entry-sections { grid-template-columns: 1fr; }
+  .swizton-section-grid { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -1073,7 +1140,7 @@ select:focus, input:focus {
   .dashboard-grid,
   .filter-grid,
   .report-preview-grid,
-  .swizton-entry-sections,
+  .swizton-section-grid,
   .donut-row,
   .hero-stats { grid-template-columns: 1fr; }
 

@@ -213,28 +213,30 @@
           <section class="panel hidden" id="swiztonPerformancePanel">
             <div class="panel-head">
               <div>
-                <h2>Swizton Performance Summary</h2>
-                <p>Lead generation, OP conversion, advice conversion, and procedure performance.</p>
+                <h2>Swizton Performance Entry</h2>
+                <p>Enter lead generation, OP conversion, advice conversion and procedure data per campaign.</p>
               </div>
               <div class="form-actions">
-                <button class="button secondary" id="swiztonClearBtn" type="button">Clear Entry</button>
+                <button class="button secondary" id="swiztonClearBtn" type="button">Clear</button>
                 <button class="button primary" id="swiztonSaveBtn" type="button">Save Entry</button>
               </div>
             </div>
 
             <div class="swizton-form">
-              <div class="filter-grid swizton-common-fields">
+
+              <!-- ── Common fields ── -->
+              <div class="swizton-common-fields">
                 <label>
                   <span>Month</span>
                   <input id="swiztonMonth" type="month" value="2026-04" />
                 </label>
                 <label>
                   <span>Centre</span>
-                  <input id="swiztonCentre" type="text" placeholder="Thrissur" />
+                  <input id="swiztonCentre" type="text" placeholder="e.g. Thrissur" />
                 </label>
                 <label>
                   <span>Campaign</span>
-                  <input id="swiztonCampaign" type="text" placeholder="#1" />
+                  <input id="swiztonCampaign" type="text" placeholder="e.g. Campaign #1" />
                 </label>
                 <label>
                   <span>Campaign Date</span>
@@ -242,137 +244,78 @@
                 </label>
               </div>
 
-              <section class="entry-subpanel">
-                <h3>Leads Entry</h3>
-                <div class="table-wrap">
-                  <table class="data-table compact swizton-entry-table">
-                    <thead>
-                      <tr class="group-row">
-                        <th rowspan="2">Sl. No.</th>
-                        <th rowspan="2">Month</th>
-                        <th rowspan="2">Centre</th>
-                        <th rowspan="2">Campaign</th>
-                        <th rowspan="2">Campaign Date</th>
-                        <th colspan="6">UFE</th>
-                        <th colspan="6">Vericose</th>
-                      </tr>
-                      <tr>
-                        <th>No. of Leads Generated</th>
-                        <th>Genuine Leads</th>
-                        <th>RNR, WCB, Wrong Queries</th>
-                        <th>No. of OP Booked</th>
-                        <th>No. of OP Seen</th>
-                        <th>% Conversion from Leads</th>
-                        <th>No. of Leads Generated</th>
-                        <th>Genuine Leads</th>
-                        <th>RNR, WCB, Wrong Queries</th>
-                        <th>No. of OP Booked</th>
-                        <th>No. of OP Seen</th>
-                        <th>% Conversion from Leads</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Auto</td>
-                        <td class="sw-common-preview" data-preview="month"></td>
-                        <td class="sw-common-preview" data-preview="centre"></td>
-                        <td class="sw-common-preview" data-preview="campaign"></td>
-                        <td class="sw-common-preview" data-preview="campaignDate"></td>
-                        <td><input id="swUfeLeadsGenerated" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeGenuineLeads" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeInvalidLeads" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeOpBooked" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeOpSeen" type="number" min="0" value="0" /></td>
-                        <td id="swUfeLeadConversionPreview">0%</td>
-                        <td><input id="swVericoseLeadsGenerated" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseGenuineLeads" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseInvalidLeads" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseOpBooked" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseOpSeen" type="number" min="0" value="0" /></td>
-                        <td id="swVericoseLeadConversionPreview">0%</td>
-                      </tr>
-                    </tbody>
-                  </table>
+              <!-- ── Leads section ── -->
+              <div class="swizton-section-grid">
+                <div class="swizton-section-card">
+                  <div class="swizton-section-head ufe">UFE — Leads</div>
+                  <div class="swizton-fields">
+                    <label><span>Leads Generated</span><input id="swUfeLeadsGenerated" type="number" min="0" value="0" /></label>
+                    <label><span>Genuine Leads</span><input id="swUfeGenuineLeads" type="number" min="0" value="0" /></label>
+                    <label><span>RNR / WCB / Wrong</span><input id="swUfeInvalidLeads" type="number" min="0" value="0" /></label>
+                    <label><span>OP Booked</span><input id="swUfeOpBooked" type="number" min="0" value="0" /></label>
+                    <label><span>OP Seen</span><input id="swUfeOpSeen" type="number" min="0" value="0" /></label>
+                    <label><span>Lead Conversion</span><div id="swUfeLeadConversionPreview" class="sw-calc-preview">0%</div></label>
+                  </div>
                 </div>
-              </section>
 
-              <section class="entry-subpanel">
-                <h3>Advices Entry</h3>
-                <div class="table-wrap">
-                  <table class="data-table compact swizton-entry-table advices">
-                    <thead>
-                      <tr class="group-row">
-                        <th rowspan="3">Sl. No.</th>
-                        <th rowspan="3">Month</th>
-                        <th rowspan="3">Centre</th>
-                        <th rowspan="3">Campaign</th>
-                        <th rowspan="3">Campaign Date</th>
-                        <th colspan="8">UFE</th>
-                        <th colspan="8">Vericose Vein</th>
-                      </tr>
-                      <tr>
-                        <th rowspan="2">No. of Advices</th>
-                        <th rowspan="2">Procedure Done</th>
-                        <th rowspan="2">Procedure Scheduled</th>
-                        <th colspan="3">Not Interested</th>
-                        <th rowspan="2">Procedure Missed</th>
-                        <th rowspan="2">% Advice Conversion</th>
-                        <th rowspan="2">No. of Advices</th>
-                        <th rowspan="2">Procedure Done</th>
-                        <th rowspan="2">Procedure Scheduled</th>
-                        <th colspan="3">Not Interested</th>
-                        <th rowspan="2">Procedure Missed</th>
-                        <th rowspan="2">% Advice Conversion</th>
-                      </tr>
-                      <tr>
-                        <th>Cash Issue</th>
-                        <th>Insurance Issue</th>
-                        <th>Other Reasons</th>
-                        <th>Cash Issue</th>
-                        <th>Insurance Issue</th>
-                        <th>Other Reasons</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>Auto</td>
-                        <td class="sw-common-preview" data-preview="month"></td>
-                        <td class="sw-common-preview" data-preview="centre"></td>
-                        <td class="sw-common-preview" data-preview="campaign"></td>
-                        <td class="sw-common-preview" data-preview="campaignDate"></td>
-                        <td><input id="swUfeAdvices" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeProcedureDone" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeProcedureScheduled" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeCashIssue" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeInsuranceIssue" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeOtherReasons" type="number" min="0" value="0" /></td>
-                        <td><input id="swUfeProcedureMissed" type="number" min="0" value="0" /></td>
-                        <td id="swUfeAdviceConversionPreview">0%</td>
-                        <td><input id="swVericoseAdvices" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseProcedureDone" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseProcedureScheduled" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseCashIssue" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseInsuranceIssue" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseOtherReasons" type="number" min="0" value="0" /></td>
-                        <td><input id="swVericoseProcedureMissed" type="number" min="0" value="0" /></td>
-                        <td id="swVericoseAdviceConversionPreview">0%</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div class="swizton-section-card">
+                  <div class="swizton-section-head vericose">Vericose — Leads</div>
+                  <div class="swizton-fields">
+                    <label><span>Leads Generated</span><input id="swVericoseLeadsGenerated" type="number" min="0" value="0" /></label>
+                    <label><span>Genuine Leads</span><input id="swVericoseGenuineLeads" type="number" min="0" value="0" /></label>
+                    <label><span>RNR / WCB / Wrong</span><input id="swVericoseInvalidLeads" type="number" min="0" value="0" /></label>
+                    <label><span>OP Booked</span><input id="swVericoseOpBooked" type="number" min="0" value="0" /></label>
+                    <label><span>OP Seen</span><input id="swVericoseOpSeen" type="number" min="0" value="0" /></label>
+                    <label><span>Lead Conversion</span><div id="swVericoseLeadConversionPreview" class="sw-calc-preview">0%</div></label>
+                  </div>
                 </div>
-              </section>
+              </div>
+
+              <!-- ── Advices section ── -->
+              <div class="swizton-section-grid">
+                <div class="swizton-section-card">
+                  <div class="swizton-section-head ufe">UFE — Advices</div>
+                  <div class="swizton-fields">
+                    <label><span>No. of Advices</span><input id="swUfeAdvices" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Done</span><input id="swUfeProcedureDone" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Scheduled</span><input id="swUfeProcedureScheduled" type="number" min="0" value="0" /></label>
+                    <label><span>Cash Issue</span><input id="swUfeCashIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Insurance Issue</span><input id="swUfeInsuranceIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Other Reasons</span><input id="swUfeOtherReasons" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Missed</span><input id="swUfeProcedureMissed" type="number" min="0" value="0" /></label>
+                    <label><span>Advice Conversion</span><div id="swUfeAdviceConversionPreview" class="sw-calc-preview">0%</div></label>
+                  </div>
+                </div>
+
+                <div class="swizton-section-card">
+                  <div class="swizton-section-head vericose">Vericose — Advices</div>
+                  <div class="swizton-fields">
+                    <label><span>No. of Advices</span><input id="swVericoseAdvices" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Done</span><input id="swVericoseProcedureDone" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Scheduled</span><input id="swVericoseProcedureScheduled" type="number" min="0" value="0" /></label>
+                    <label><span>Cash Issue</span><input id="swVericoseCashIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Insurance Issue</span><input id="swVericoseInsuranceIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Other Reasons</span><input id="swVericoseOtherReasons" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Missed</span><input id="swVericoseProcedureMissed" type="number" min="0" value="0" /></label>
+                    <label><span>Advice Conversion</span><div id="swVericoseAdviceConversionPreview" class="sw-calc-preview">0%</div></label>
+                  </div>
+                </div>
+              </div>
+
             </div>
 
-            <section class="entry-subpanel">
-              <div class="panel-head">
+            <!-- ── Consolidated mapping ── -->
+            <section class="entry-subpanel" style="margin-bottom:16px">
+              <div class="panel-head" style="margin-bottom:8px">
                 <div>
-                  <h3>Consolidated Pull Mapping</h3>
-                  <p>Choose which manual entry field each consolidated column should pull from.</p>
+                  <h3>Consolidated Column Mapping</h3>
+                  <p>Choose which entry field each consolidated column should pull from.</p>
                 </div>
               </div>
               <div class="filter-grid" id="swiztonMappingGrid"></div>
             </section>
 
+            <!-- ── Consolidated output table ── -->
             <div class="table-wrap">
               <table class="data-table compact" id="swiztonConsolidatedTable">
                 <thead>
@@ -382,21 +325,21 @@
                     <th rowspan="2">Centre</th>
                     <th rowspan="2">Campaign</th>
                     <th rowspan="2">Campaign Date</th>
-                    <th rowspan="2">No. of Leads Generated (UFE)</th>
-                    <th rowspan="2">No. of Leads Generated (Vericose)</th>
-                    <th rowspan="2">No. of OP generated (UFE)</th>
-                    <th rowspan="2">No. of OP generated (Vericose)</th>
-                    <th rowspan="2">No. of Advices (UFE)</th>
-                    <th rowspan="2">No. of Advices (Vericose)</th>
-                    <th colspan="2">From Digital Marketing Leads</th>
-                    <th colspan="2">Total No. of Procedure Done</th>
+                    <th rowspan="2">UFE Leads</th>
+                    <th rowspan="2">Vericose Leads</th>
+                    <th rowspan="2">UFE OP Generated</th>
+                    <th rowspan="2">Vericose OP Generated</th>
+                    <th rowspan="2">UFE Advices</th>
+                    <th rowspan="2">Vericose Advices</th>
+                    <th colspan="2">Digital Procedures</th>
+                    <th colspan="2">Total Procedures</th>
                     <th rowspan="2">Action</th>
                   </tr>
                   <tr>
-                    <th>No. of Procedures Done (UFE)</th>
-                    <th>No. of Procedures Done (Vericose)</th>
-                    <th>No. of Procedures Done (UFE)</th>
-                    <th>No. of Procedures Done (Vericose)</th>
+                    <th>UFE</th>
+                    <th>Vericose</th>
+                    <th>UFE</th>
+                    <th>Vericose</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
