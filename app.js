@@ -33,6 +33,18 @@ let adminAuditLog = [];
 let admins = [];
 let swiztonEntries = [];
 let swiztonEditingId = null;
+let swiztonConsolidatedMapping = {
+  ufeLeadsGenerated: "ufeLeadsGenerated",
+  vericoseLeadsGenerated: "vericoseLeadsGenerated",
+  ufeOpGenerated: "ufeOpSeen",
+  vericoseOpGenerated: "vericoseOpSeen",
+  ufeAdvices: "ufeAdvices",
+  vericoseAdvices: "vericoseAdvices",
+  ufeDigitalProcedures: "ufeProcedureDone",
+  vericoseDigitalProcedures: "vericoseProcedureDone",
+  ufeTotalProcedures: "ufeProcedureDone",
+  vericoseTotalProcedures: "vericoseProcedureDone"
+};
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -373,6 +385,7 @@ function getAppState() {
     centers,
     procedureSettings,
     swiztonEntries,
+    swiztonConsolidatedMapping,
     entries,
     entryMeta,
     unlockRequests,
@@ -388,6 +401,9 @@ function applyAppState(state) {
   if (Array.isArray(state.centers)) centers = state.centers;
   if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
   if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
+  if (state.swiztonConsolidatedMapping && typeof state.swiztonConsolidatedMapping === "object") {
+    swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...state.swiztonConsolidatedMapping };
+  }
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
@@ -446,6 +462,9 @@ async function loadFromSupabase() {
   centers = cfg.centers || centers;
   procedureSettings = cfg.procedures || procedureSettings;
   if (Array.isArray(cfg.swizton_entries)) swiztonEntries = cfg.swizton_entries;
+  if (cfg.swizton_mapping && typeof cfg.swizton_mapping === "object") {
+    swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...cfg.swizton_mapping };
+  }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
 
@@ -554,6 +573,9 @@ function loadFromLocalStorage() {
     if (Array.isArray(state.centers)) centers = state.centers;
     if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
     if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
+    if (state.swiztonConsolidatedMapping && typeof state.swiztonConsolidatedMapping === "object") {
+      swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...state.swiztonConsolidatedMapping };
+    }
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
       Object.assign(entries, state.entries);
@@ -637,6 +659,7 @@ async function saveConfig() {
     centers,
     procedures: procedureSettings,
     swizton_entries: swiztonEntries,
+    swizton_mapping: swiztonConsolidatedMapping,
     admins,
     admin_audit_log: adminAuditLog,
     updated_at: new Date().toISOString()
@@ -647,7 +670,7 @@ async function saveConfig() {
     .upsert(payload);
 
   // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries/i.test(error.message || "")) {
+  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping/i.test(error.message || "")) {
     const fallbackPayload = { ...payload };
     if (/admins|admin_audit_log/i.test(error.message || "")) {
       delete fallbackPayload.admins;
@@ -655,6 +678,9 @@ async function saveConfig() {
     }
     if (/swizton_entries/i.test(error.message || "")) {
       delete fallbackPayload.swizton_entries;
+    }
+    if (/swizton_mapping/i.test(error.message || "")) {
+      delete fallbackPayload.swizton_mapping;
     }
     ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
@@ -1177,6 +1203,47 @@ const SWIZTON_FIELD_IDS = {
   vericoseTotalProcedureDone: "swVericoseTotalProcedureDone"
 };
 
+const SWIZTON_CONSOLIDATED_COLUMNS = [
+  { key: "ufeLeadsGenerated", label: "No. of Leads Generated (UFE)" },
+  { key: "vericoseLeadsGenerated", label: "No. of Leads Generated (Vericose)" },
+  { key: "ufeOpGenerated", label: "No. of OP generated (UFE)" },
+  { key: "vericoseOpGenerated", label: "No. of OP generated (Vericose)" },
+  { key: "ufeAdvices", label: "No. of Advices (UFE)" },
+  { key: "vericoseAdvices", label: "No. of Advices (Vericose)" },
+  { key: "ufeDigitalProcedures", label: "Digital Procedures Done (UFE)" },
+  { key: "vericoseDigitalProcedures", label: "Digital Procedures Done (Vericose)" },
+  { key: "ufeTotalProcedures", label: "Total Procedures Done (UFE)" },
+  { key: "vericoseTotalProcedures", label: "Total Procedures Done (Vericose)" }
+];
+
+const SWIZTON_SOURCE_OPTIONS = [
+  { value: "", label: "Blank / Manual later" },
+  { value: "ufeLeadsGenerated", label: "Leads - UFE - Leads Generated" },
+  { value: "ufeGenuineLeads", label: "Leads - UFE - Genuine Leads" },
+  { value: "ufeInvalidLeads", label: "Leads - UFE - RNR/WCB/Wrong Queries" },
+  { value: "ufeOpBooked", label: "Leads - UFE - OP Booked" },
+  { value: "ufeOpSeen", label: "Leads - UFE - OP Seen" },
+  { value: "vericoseLeadsGenerated", label: "Leads - Vericose - Leads Generated" },
+  { value: "vericoseGenuineLeads", label: "Leads - Vericose - Genuine Leads" },
+  { value: "vericoseInvalidLeads", label: "Leads - Vericose - RNR/WCB/Wrong Queries" },
+  { value: "vericoseOpBooked", label: "Leads - Vericose - OP Booked" },
+  { value: "vericoseOpSeen", label: "Leads - Vericose - OP Seen" },
+  { value: "ufeAdvices", label: "Advices - UFE - No. of Advices" },
+  { value: "ufeProcedureDone", label: "Advices - UFE - Procedure Done" },
+  { value: "ufeProcedureScheduled", label: "Advices - UFE - Procedure Scheduled" },
+  { value: "ufeCashIssue", label: "Advices - UFE - Cash Issue" },
+  { value: "ufeInsuranceIssue", label: "Advices - UFE - Insurance Issue" },
+  { value: "ufeOtherReasons", label: "Advices - UFE - Other Reasons" },
+  { value: "ufeProcedureMissed", label: "Advices - UFE - Procedure Missed" },
+  { value: "vericoseAdvices", label: "Advices - Vericose - No. of Advices" },
+  { value: "vericoseProcedureDone", label: "Advices - Vericose - Procedure Done" },
+  { value: "vericoseProcedureScheduled", label: "Advices - Vericose - Procedure Scheduled" },
+  { value: "vericoseCashIssue", label: "Advices - Vericose - Cash Issue" },
+  { value: "vericoseInsuranceIssue", label: "Advices - Vericose - Insurance Issue" },
+  { value: "vericoseOtherReasons", label: "Advices - Vericose - Other Reasons" },
+  { value: "vericoseProcedureMissed", label: "Advices - Vericose - Procedure Missed" }
+];
+
 function selectedSwiztonMonth() {
   return document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
 }
@@ -1197,31 +1264,34 @@ function swiztonTotalProcedure(entry, type) {
   return currencySafeNumber(entry[totalKey]) || currencySafeNumber(entry[doneKey]);
 }
 
+function swiztonMappedValue(entry, columnKey) {
+  const sourceKey = swiztonConsolidatedMapping[columnKey];
+  if (!sourceKey) return "";
+  return currencySafeNumber(entry[sourceKey]);
+}
+
+function swiztonConsolidatedRow(entry, index = 0) {
+  const values = Object.fromEntries(
+    SWIZTON_CONSOLIDATED_COLUMNS.map((column) => [column.key, swiztonMappedValue(entry, column.key)])
+  );
+  return {
+    slNo: index + 1,
+    month: entry.month || "",
+    centre: entry.centre || "",
+    campaign: entry.campaign || "",
+    campaignDate: entry.campaignDate || "",
+    id: entry.id,
+    ...values
+  };
+}
+
 function swiztonTotals(rows = getSwiztonRows()) {
   return rows.reduce((totals, entry) => {
-    totals.ufeLeads += currencySafeNumber(entry.ufeLeadsGenerated);
-    totals.vericoseLeads += currencySafeNumber(entry.vericoseLeadsGenerated);
-    totals.ufeOpSeen += currencySafeNumber(entry.ufeOpSeen);
-    totals.vericoseOpSeen += currencySafeNumber(entry.vericoseOpSeen);
-    totals.ufeAdvices += currencySafeNumber(entry.ufeAdvices);
-    totals.vericoseAdvices += currencySafeNumber(entry.vericoseAdvices);
-    totals.ufeDigitalProcedures += currencySafeNumber(entry.ufeProcedureDone);
-    totals.vericoseDigitalProcedures += currencySafeNumber(entry.vericoseProcedureDone);
-    totals.ufeTotalProcedures += swiztonTotalProcedure(entry, "ufe");
-    totals.vericoseTotalProcedures += swiztonTotalProcedure(entry, "vericose");
+    SWIZTON_CONSOLIDATED_COLUMNS.forEach((column) => {
+      totals[column.key] += currencySafeNumber(swiztonMappedValue(entry, column.key));
+    });
     return totals;
-  }, {
-    ufeLeads: 0,
-    vericoseLeads: 0,
-    ufeOpSeen: 0,
-    vericoseOpSeen: 0,
-    ufeAdvices: 0,
-    vericoseAdvices: 0,
-    ufeDigitalProcedures: 0,
-    vericoseDigitalProcedures: 0,
-    ufeTotalProcedures: 0,
-    vericoseTotalProcedures: 0
-  });
+  }, Object.fromEntries(SWIZTON_CONSOLIDATED_COLUMNS.map((column) => [column.key, 0])));
 }
 
 function reportTotals(rows) {
@@ -1428,42 +1498,46 @@ function renderSwiztonDashboard() {
   toggleCompanyDashboardSections();
   const rows = getSwiztonRows();
   const totals = swiztonTotals(rows);
+  const consolidatedRows = rows.map(swiztonConsolidatedRow);
   const tbody = document.querySelector("#swiztonConsolidatedTable tbody");
   const tfoot = document.querySelector("#swiztonConsolidatedTable tfoot");
   if (!tbody || !tfoot) return;
+  renderSwiztonMappingGrid();
+  updateSwiztonEntryPreviews();
 
-  tbody.innerHTML = rows.length
-    ? rows.map((row) => `
+  tbody.innerHTML = consolidatedRows.length
+    ? consolidatedRows.map((row) => `
         <tr>
+          <td>${row.slNo}</td>
           <td>${escapeHtml(row.month || "")}</td>
           <td>${escapeHtml(row.centre)}</td>
           <td>${escapeHtml(row.campaign)}</td>
           <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
-          <td>${currencySafeNumber(row.ufeLeadsGenerated)}</td>
-          <td>${currencySafeNumber(row.vericoseLeadsGenerated)}</td>
-          <td>${currencySafeNumber(row.ufeOpSeen)}</td>
-          <td>${currencySafeNumber(row.vericoseOpSeen)}</td>
-          <td>${currencySafeNumber(row.ufeAdvices)}</td>
-          <td>${currencySafeNumber(row.vericoseAdvices)}</td>
-          <td>${currencySafeNumber(row.ufeProcedureDone)}</td>
-          <td>${currencySafeNumber(row.vericoseProcedureDone)}</td>
-          <td>${swiztonTotalProcedure(row, "ufe")}</td>
-          <td>${swiztonTotalProcedure(row, "vericose")}</td>
+          <td>${row.ufeLeadsGenerated}</td>
+          <td>${row.vericoseLeadsGenerated}</td>
+          <td>${row.ufeOpGenerated}</td>
+          <td>${row.vericoseOpGenerated}</td>
+          <td>${row.ufeAdvices}</td>
+          <td>${row.vericoseAdvices}</td>
+          <td>${row.ufeDigitalProcedures}</td>
+          <td>${row.vericoseDigitalProcedures}</td>
+          <td>${row.ufeTotalProcedures}</td>
+          <td>${row.vericoseTotalProcedures}</td>
           <td>
             <button class="button secondary" data-swizton-edit="${row.id}">Edit</button>
             <button class="button secondary" data-swizton-delete="${row.id}">Delete</button>
           </td>
         </tr>
       `).join("")
-    : `<tr><td colspan="15" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries for the selected month.</td></tr>`;
+    : `<tr><td colspan="16" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries for the selected month.</td></tr>`;
 
   tfoot.innerHTML = `
     <tr>
-      <td colspan="4">Total</td>
-      <td>${totals.ufeLeads}</td>
-      <td>${totals.vericoseLeads}</td>
-      <td>${totals.ufeOpSeen}</td>
-      <td>${totals.vericoseOpSeen}</td>
+      <td colspan="5">Total</td>
+      <td>${totals.ufeLeadsGenerated}</td>
+      <td>${totals.vericoseLeadsGenerated}</td>
+      <td>${totals.ufeOpGenerated}</td>
+      <td>${totals.vericoseOpGenerated}</td>
       <td>${totals.ufeAdvices}</td>
       <td>${totals.vericoseAdvices}</td>
       <td>${totals.ufeDigitalProcedures}</td>
@@ -1475,8 +1549,8 @@ function renderSwiztonDashboard() {
   `;
 
   setSummaryCards([
-    { label: "Total Leads", value: totals.ufeLeads + totals.vericoseLeads, note: "UFE and Vericose combined" },
-    { label: "OP Seen", value: totals.ufeOpSeen + totals.vericoseOpSeen, note: "Lead-to-OP movement" },
+    { label: "Total Leads", value: totals.ufeLeadsGenerated + totals.vericoseLeadsGenerated, note: "UFE and Vericose combined" },
+    { label: "OP Generated", value: totals.ufeOpGenerated + totals.vericoseOpGenerated, note: "Mapped from selected lead fields" },
     { label: "Advices", value: totals.ufeAdvices + totals.vericoseAdvices, note: "UFE and Vericose advices" },
     { label: "Procedure Done", value: totals.ufeTotalProcedures + totals.vericoseTotalProcedures, note: "Total UFE and Vericose procedures" }
   ]);
@@ -1487,6 +1561,53 @@ function renderSwiztonDashboard() {
   tbody.querySelectorAll("[data-swizton-delete]").forEach((button) => {
     button.addEventListener("click", () => deleteSwiztonEntry(Number(button.dataset.swiztonDelete)));
   });
+}
+
+function renderSwiztonMappingGrid() {
+  const grid = document.getElementById("swiztonMappingGrid");
+  if (!grid) return;
+  grid.innerHTML = SWIZTON_CONSOLIDATED_COLUMNS.map((column) => `
+    <label>
+      <span>${escapeHtml(column.label)}</span>
+      <select data-swizton-map="${column.key}">
+        ${SWIZTON_SOURCE_OPTIONS.map((option) => `
+          <option value="${option.value}" ${swiztonConsolidatedMapping[column.key] === option.value ? "selected" : ""}>
+            ${escapeHtml(option.label)}
+          </option>
+        `).join("")}
+      </select>
+    </label>
+  `).join("");
+  grid.querySelectorAll("[data-swizton-map]").forEach((select) => {
+    select.addEventListener("change", () => {
+      swiztonConsolidatedMapping[select.dataset.swiztonMap] = select.value;
+      renderSwiztonDashboard();
+      renderAdminReportPreview();
+      persistSoon();
+    });
+  });
+}
+
+function swiztonPercent(numerator, denominator) {
+  return denominator ? `${Math.round((currencySafeNumber(numerator) / currencySafeNumber(denominator)) * 100)}%` : "0%";
+}
+
+function updateSwiztonEntryPreviews() {
+  const read = (id) => currencySafeNumber(document.getElementById(id)?.value);
+  document.querySelectorAll(".sw-common-preview").forEach((cell) => {
+    const field = cell.dataset.preview;
+    const id = SWIZTON_FIELD_IDS[field];
+    const value = document.getElementById(id)?.value || "";
+    cell.textContent = field === "campaignDate" && value ? displayDate(value) : value;
+  });
+  const ufeLead = document.getElementById("swUfeLeadConversionPreview");
+  const vericoseLead = document.getElementById("swVericoseLeadConversionPreview");
+  const ufeAdvice = document.getElementById("swUfeAdviceConversionPreview");
+  const vericoseAdvice = document.getElementById("swVericoseAdviceConversionPreview");
+  if (ufeLead) ufeLead.textContent = swiztonPercent(read("swUfeOpSeen"), read("swUfeLeadsGenerated"));
+  if (vericoseLead) vericoseLead.textContent = swiztonPercent(read("swVericoseOpSeen"), read("swVericoseLeadsGenerated"));
+  if (ufeAdvice) ufeAdvice.textContent = swiztonPercent(read("swUfeProcedureDone"), read("swUfeAdvices"));
+  if (vericoseAdvice) vericoseAdvice.textContent = swiztonPercent(read("swVericoseProcedureDone"), read("swVericoseAdvices"));
 }
 
 function readSwiztonForm() {
@@ -1520,6 +1641,7 @@ function fillSwiztonForm(entry) {
       input.value = entry?.[field] || "";
     }
   });
+  updateSwiztonEntryPreviews();
 }
 
 function clearSwiztonForm() {
@@ -1532,6 +1654,7 @@ function clearSwiztonForm() {
     ...Object.fromEntries(SWIZTON_NUMERIC_FIELDS.map((field) => [field, 0]))
   });
   document.getElementById("swiztonSaveBtn").textContent = "Save Entry";
+  updateSwiztonEntryPreviews();
 }
 
 function saveSwiztonEntry() {
@@ -2610,6 +2733,10 @@ function setupAdminControls() {
   });
   document.getElementById("swiztonSaveBtn")?.addEventListener("click", saveSwiztonEntry);
   document.getElementById("swiztonClearBtn")?.addEventListener("click", clearSwiztonForm);
+  document.querySelectorAll("#swiztonPerformancePanel input").forEach((input) => {
+    input.addEventListener("input", updateSwiztonEntryPreviews);
+    input.addEventListener("change", updateSwiztonEntryPreviews);
+  });
 
   // Unlock modal
   document.getElementById("unlockModalClose")?.addEventListener("click", closeUnlockModal);
@@ -2807,116 +2934,25 @@ function consolidatedRowsToCsv(rows) {
 
 function swiztonRowsToCsv(rows) {
   const totals = swiztonTotals(rows);
-  const header = [
-    "Month",
-    "Centre",
-    "Campaign",
-    "Campaign Date",
-    "UFE Leads Generated",
-    "UFE Genuine Leads",
-    "UFE RNR/WCB/Wrong Queries",
-    "UFE OP Booked",
-    "UFE OP Seen",
-    "UFE Lead Conversion %",
-    "Vericose Leads Generated",
-    "Vericose Genuine Leads",
-    "Vericose RNR/WCB/Wrong Queries",
-    "Vericose OP Booked",
-    "Vericose OP Seen",
-    "Vericose Lead Conversion %",
-    "UFE Advices",
-    "UFE Procedure Done",
-    "UFE Procedure Scheduled",
-    "UFE Not Interested - Cash",
-    "UFE Not Interested - Insurance",
-    "UFE Not Interested - Other",
-    "UFE Procedure Missed",
-    "UFE Advice Conversion %",
-    "Vericose Advices",
-    "Vericose Procedure Done",
-    "Vericose Procedure Scheduled",
-    "Vericose Not Interested - Cash",
-    "Vericose Not Interested - Insurance",
-    "Vericose Not Interested - Other",
-    "Vericose Procedure Missed",
-    "Vericose Advice Conversion %",
-    "UFE Total Procedure Done",
-    "Vericose Total Procedure Done"
+  const percent = (numerator, denominator) => denominator ? Math.round((currencySafeNumber(numerator) / currencySafeNumber(denominator)) * 100) : 0;
+  const leadsHeader = ["Sl. No.", "Month", "Centre", "Campaign", "Campaign Date", "UFE Leads Generated", "UFE Genuine Leads", "UFE RNR/WCB/Wrong Queries", "UFE OP Booked", "UFE OP Seen", "UFE Lead Conversion %", "Vericose Leads Generated", "Vericose Genuine Leads", "Vericose RNR/WCB/Wrong Queries", "Vericose OP Booked", "Vericose OP Seen", "Vericose Lead Conversion %"];
+  const leadsRows = rows.map((row, index) => [index + 1, row.month, row.centre, row.campaign, row.campaignDate ? displayDate(row.campaignDate) : "", row.ufeLeadsGenerated, row.ufeGenuineLeads, row.ufeInvalidLeads, row.ufeOpBooked, row.ufeOpSeen, percent(row.ufeOpSeen, row.ufeLeadsGenerated), row.vericoseLeadsGenerated, row.vericoseGenuineLeads, row.vericoseInvalidLeads, row.vericoseOpBooked, row.vericoseOpSeen, percent(row.vericoseOpSeen, row.vericoseLeadsGenerated)]);
+  const adviceHeader = ["Sl. No.", "Month", "Centre", "Campaign", "Campaign Date", "UFE Advices", "UFE Procedure Done", "UFE Procedure Scheduled", "UFE Cash Issue", "UFE Insurance Issue", "UFE Other Reasons", "UFE Procedure Missed", "UFE Advice Conversion %", "Vericose Advices", "Vericose Procedure Done", "Vericose Procedure Scheduled", "Vericose Cash Issue", "Vericose Insurance Issue", "Vericose Other Reasons", "Vericose Procedure Missed", "Vericose Advice Conversion %"];
+  const adviceRows = rows.map((row, index) => [index + 1, row.month, row.centre, row.campaign, row.campaignDate ? displayDate(row.campaignDate) : "", row.ufeAdvices, row.ufeProcedureDone, row.ufeProcedureScheduled, row.ufeCashIssue, row.ufeInsuranceIssue, row.ufeOtherReasons, row.ufeProcedureMissed, percent(row.ufeProcedureDone, row.ufeAdvices), row.vericoseAdvices, row.vericoseProcedureDone, row.vericoseProcedureScheduled, row.vericoseCashIssue, row.vericoseInsuranceIssue, row.vericoseOtherReasons, row.vericoseProcedureMissed, percent(row.vericoseProcedureDone, row.vericoseAdvices)]);
+  const consolidatedHeader = ["Sl. No.", "Month", "Centre", "Campaign", "Campaign Date", "No. of Leads Generated (UFE)", "No. of Leads Generated (Vericose)", "No. of OP generated (UFE)", "No. of OP generated (Vericose)", "No. of Advices (UFE)", "No. of Advices (Vericose)", "Digital Procedures Done (UFE)", "Digital Procedures Done (Vericose)", "Total Procedures Done (UFE)", "Total Procedures Done (Vericose)"];
+  const consolidatedRows = rows.map((row, index) => {
+    const item = swiztonConsolidatedRow(row, index);
+    return [item.slNo, item.month, item.centre, item.campaign, item.campaignDate ? displayDate(item.campaignDate) : "", item.ufeLeadsGenerated, item.vericoseLeadsGenerated, item.ufeOpGenerated, item.vericoseOpGenerated, item.ufeAdvices, item.vericoseAdvices, item.ufeDigitalProcedures, item.vericoseDigitalProcedures, item.ufeTotalProcedures, item.vericoseTotalProcedures];
+  });
+  const consolidatedTotalRow = ["TOTAL", "", "", "", "", totals.ufeLeadsGenerated, totals.vericoseLeadsGenerated, totals.ufeOpGenerated, totals.vericoseOpGenerated, totals.ufeAdvices, totals.vericoseAdvices, totals.ufeDigitalProcedures, totals.vericoseDigitalProcedures, totals.ufeTotalProcedures, totals.vericoseTotalProcedures];
+  const sections = [
+    ["Leads Entry", leadsHeader, ...leadsRows],
+    [],
+    ["Advices Entry", adviceHeader, ...adviceRows],
+    [],
+    ["Consolidated Report", consolidatedHeader, ...consolidatedRows, consolidatedTotalRow]
   ];
-  const percent = (numerator, denominator) => denominator ? Math.round((numerator / denominator) * 100) : 0;
-  const body = rows.map((row) => [
-    row.month,
-    row.centre,
-    row.campaign,
-    row.campaignDate ? displayDate(row.campaignDate) : "",
-    row.ufeLeadsGenerated,
-    row.ufeGenuineLeads,
-    row.ufeInvalidLeads,
-    row.ufeOpBooked,
-    row.ufeOpSeen,
-    percent(row.ufeOpSeen, row.ufeLeadsGenerated),
-    row.vericoseLeadsGenerated,
-    row.vericoseGenuineLeads,
-    row.vericoseInvalidLeads,
-    row.vericoseOpBooked,
-    row.vericoseOpSeen,
-    percent(row.vericoseOpSeen, row.vericoseLeadsGenerated),
-    row.ufeAdvices,
-    row.ufeProcedureDone,
-    row.ufeProcedureScheduled,
-    row.ufeCashIssue,
-    row.ufeInsuranceIssue,
-    row.ufeOtherReasons,
-    row.ufeProcedureMissed,
-    percent(row.ufeProcedureDone, row.ufeAdvices),
-    row.vericoseAdvices,
-    row.vericoseProcedureDone,
-    row.vericoseProcedureScheduled,
-    row.vericoseCashIssue,
-    row.vericoseInsuranceIssue,
-    row.vericoseOtherReasons,
-    row.vericoseProcedureMissed,
-    percent(row.vericoseProcedureDone, row.vericoseAdvices),
-    swiztonTotalProcedure(row, "ufe"),
-    swiztonTotalProcedure(row, "vericose")
-  ]);
-  const totalRow = [
-    "TOTAL",
-    "",
-    "",
-    "",
-    totals.ufeLeads,
-    "",
-    "",
-    "",
-    totals.ufeOpSeen,
-    percent(totals.ufeOpSeen, totals.ufeLeads),
-    totals.vericoseLeads,
-    "",
-    "",
-    "",
-    totals.vericoseOpSeen,
-    percent(totals.vericoseOpSeen, totals.vericoseLeads),
-    totals.ufeAdvices,
-    totals.ufeDigitalProcedures,
-    "",
-    "",
-    "",
-    "",
-    "",
-    percent(totals.ufeDigitalProcedures, totals.ufeAdvices),
-    totals.vericoseAdvices,
-    totals.vericoseDigitalProcedures,
-    "",
-    "",
-    "",
-    "",
-    "",
-    percent(totals.vericoseDigitalProcedures, totals.vericoseAdvices),
-    totals.ufeTotalProcedures,
-    totals.vericoseTotalProcedures
-  ];
-  return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
+  return sections.map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
 function downloadSwiztonCsvReport() {
@@ -3016,28 +3052,32 @@ function swiztonProfessionalReportHtml() {
   const month = selectedSwiztonMonth();
   const rows = getSwiztonRows(month);
   const totals = swiztonTotals(rows);
-  const percent = (numerator, denominator) => denominator ? Math.round((numerator / denominator) * 100) : 0;
-  const tableRows = rows.map((row) => `
+  const percent = (numerator, denominator) => denominator ? Math.round((currencySafeNumber(numerator) / currencySafeNumber(denominator)) * 100) : 0;
+  const tableRows = rows.map((entry, index) => {
+    const row = swiztonConsolidatedRow(entry, index);
+    return `
     <tr>
+      <td>${row.slNo}</td>
       <td>${escapeHtml(row.month || "")}</td>
       <td>${escapeHtml(row.centre || "")}</td>
       <td>${escapeHtml(row.campaign || "")}</td>
       <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
-      <td>${currencySafeNumber(row.ufeLeadsGenerated)}</td>
-      <td>${currencySafeNumber(row.vericoseLeadsGenerated)}</td>
-      <td>${currencySafeNumber(row.ufeOpSeen)}</td>
-      <td>${currencySafeNumber(row.vericoseOpSeen)}</td>
-      <td>${currencySafeNumber(row.ufeAdvices)}</td>
-      <td>${currencySafeNumber(row.vericoseAdvices)}</td>
-      <td>${currencySafeNumber(row.ufeProcedureDone)}</td>
-      <td>${currencySafeNumber(row.vericoseProcedureDone)}</td>
-      <td>${swiztonTotalProcedure(row, "ufe")}</td>
-      <td>${swiztonTotalProcedure(row, "vericose")}</td>
+      <td>${row.ufeLeadsGenerated}</td>
+      <td>${row.vericoseLeadsGenerated}</td>
+      <td>${row.ufeOpGenerated}</td>
+      <td>${row.vericoseOpGenerated}</td>
+      <td>${row.ufeAdvices}</td>
+      <td>${row.vericoseAdvices}</td>
+      <td>${row.ufeDigitalProcedures}</td>
+      <td>${row.vericoseDigitalProcedures}</td>
+      <td>${row.ufeTotalProcedures}</td>
+      <td>${row.vericoseTotalProcedures}</td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
   const totalProcedures = totals.ufeTotalProcedures + totals.vericoseTotalProcedures;
-  const totalLeads = totals.ufeLeads + totals.vericoseLeads;
-  const totalOpSeen = totals.ufeOpSeen + totals.vericoseOpSeen;
+  const totalLeads = totals.ufeLeadsGenerated + totals.vericoseLeadsGenerated;
+  const totalOpSeen = totals.ufeOpGenerated + totals.vericoseOpGenerated;
   const totalAdvices = totals.ufeAdvices + totals.vericoseAdvices;
   return `<!doctype html>
 <html>
@@ -3074,17 +3114,17 @@ function swiztonProfessionalReportHtml() {
       <div class="card"><span>OP Seen</span><strong>${totalOpSeen}</strong></div>
       <div class="card"><span>Advices</span><strong>${totalAdvices}</strong></div>
       <div class="card"><span>Procedure Done</span><strong>${totalProcedures}</strong></div>
-      <div class="card"><span>UFE Lead Conversion</span><strong>${percent(totals.ufeOpSeen, totals.ufeLeads)}%</strong></div>
-      <div class="card"><span>Vericose Lead Conversion</span><strong>${percent(totals.vericoseOpSeen, totals.vericoseLeads)}%</strong></div>
+      <div class="card"><span>UFE Lead Conversion</span><strong>${percent(totals.ufeOpGenerated, totals.ufeLeadsGenerated)}%</strong></div>
+      <div class="card"><span>Vericose Lead Conversion</span><strong>${percent(totals.vericoseOpGenerated, totals.vericoseLeadsGenerated)}%</strong></div>
       <div class="card"><span>UFE Advice Conversion</span><strong>${percent(totals.ufeDigitalProcedures, totals.ufeAdvices)}%</strong></div>
       <div class="card"><span>Vericose Advice Conversion</span><strong>${percent(totals.vericoseDigitalProcedures, totals.vericoseAdvices)}%</strong></div>
     </div>
     <section>
       <h2>Consolidated Summary</h2>
       <table>
-        <thead><tr><th>Month</th><th>Centre</th><th>Campaign</th><th>Campaign Date</th><th>UFE Leads</th><th>Vericose Leads</th><th>UFE OP Seen</th><th>Vericose OP Seen</th><th>UFE Advices</th><th>Vericose Advices</th><th>UFE Digital Proc.</th><th>Vericose Digital Proc.</th><th>UFE Total Proc.</th><th>Vericose Total Proc.</th></tr></thead>
-        <tbody>${tableRows || `<tr><td colspan="14">No Swizton data for selected month.</td></tr>`}</tbody>
-        <tfoot><tr style="font-weight:700;background:#e9f0f7"><td colspan="4">Total</td><td>${totals.ufeLeads}</td><td>${totals.vericoseLeads}</td><td>${totals.ufeOpSeen}</td><td>${totals.vericoseOpSeen}</td><td>${totals.ufeAdvices}</td><td>${totals.vericoseAdvices}</td><td>${totals.ufeDigitalProcedures}</td><td>${totals.vericoseDigitalProcedures}</td><td>${totals.ufeTotalProcedures}</td><td>${totals.vericoseTotalProcedures}</td></tr></tfoot>
+        <thead><tr><th>Sl. No.</th><th>Month</th><th>Centre</th><th>Campaign</th><th>Campaign Date</th><th>UFE Leads</th><th>Vericose Leads</th><th>UFE OP Generated</th><th>Vericose OP Generated</th><th>UFE Advices</th><th>Vericose Advices</th><th>UFE Digital Proc.</th><th>Vericose Digital Proc.</th><th>UFE Total Proc.</th><th>Vericose Total Proc.</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="15">No Swizton data for selected month.</td></tr>`}</tbody>
+        <tfoot><tr style="font-weight:700;background:#e9f0f7"><td colspan="5">Total</td><td>${totals.ufeLeadsGenerated}</td><td>${totals.vericoseLeadsGenerated}</td><td>${totals.ufeOpGenerated}</td><td>${totals.vericoseOpGenerated}</td><td>${totals.ufeAdvices}</td><td>${totals.vericoseAdvices}</td><td>${totals.ufeDigitalProcedures}</td><td>${totals.vericoseDigitalProcedures}</td><td>${totals.ufeTotalProcedures}</td><td>${totals.vericoseTotalProcedures}</td></tr></tfoot>
       </table>
     </section>
   </main>
@@ -3278,8 +3318,8 @@ function downloadSwiztonImageReport(format) {
   const month = selectedSwiztonMonth();
   const rows = getSwiztonRows(month);
   const totals = swiztonTotals(rows);
-  const totalLeads = totals.ufeLeads + totals.vericoseLeads;
-  const totalOpSeen = totals.ufeOpSeen + totals.vericoseOpSeen;
+  const totalLeads = totals.ufeLeadsGenerated + totals.vericoseLeadsGenerated;
+  const totalOpSeen = totals.ufeOpGenerated + totals.vericoseOpGenerated;
   const totalAdvices = totals.ufeAdvices + totals.vericoseAdvices;
   const totalProcedures = totals.ufeTotalProcedures + totals.vericoseTotalProcedures;
   const canvas = document.createElement("canvas");
@@ -3336,18 +3376,19 @@ function downloadSwiztonImageReport(format) {
   ctx.fillText("Centre", 80, 615);
   ctx.fillText("Campaign", 290, 615);
   ctx.fillText("Leads", 500, 615);
-  ctx.fillText("OP Seen", 650, 615);
+  ctx.fillText("OP Gen.", 650, 615);
   ctx.fillText("Advices", 820, 615);
   ctx.fillText("Procedures", 1000, 615);
   ctx.font = "18px Arial";
-  rows.slice(0, 6).forEach((row, index) => {
+  rows.slice(0, 6).forEach((entry, index) => {
+    const row = swiztonConsolidatedRow(entry, index);
     const y = 655 + index * 32;
     ctx.fillText(String(row.centre || ""), 80, y);
     ctx.fillText(String(row.campaign || ""), 290, y);
     ctx.fillText(String(currencySafeNumber(row.ufeLeadsGenerated) + currencySafeNumber(row.vericoseLeadsGenerated)), 500, y);
-    ctx.fillText(String(currencySafeNumber(row.ufeOpSeen) + currencySafeNumber(row.vericoseOpSeen)), 650, y);
+    ctx.fillText(String(currencySafeNumber(row.ufeOpGenerated) + currencySafeNumber(row.vericoseOpGenerated)), 650, y);
     ctx.fillText(String(currencySafeNumber(row.ufeAdvices) + currencySafeNumber(row.vericoseAdvices)), 820, y);
-    ctx.fillText(String(swiztonTotalProcedure(row, "ufe") + swiztonTotalProcedure(row, "vericose")), 1000, y);
+    ctx.fillText(String(currencySafeNumber(row.ufeTotalProcedures) + currencySafeNumber(row.vericoseTotalProcedures)), 1000, y);
   });
   if (!rows.length) {
     ctx.fillText("No Swizton data for the selected month.", 80, 660);
@@ -3967,6 +4008,7 @@ function exportToFile() {
     centers,
     procedureSettings,
     swiztonEntries,
+    swiztonConsolidatedMapping,
     entries,
     entryMeta,
     unlockRequests,

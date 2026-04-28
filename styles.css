@@ -743,6 +743,26 @@ select:focus, input:focus {
   margin-bottom: 12px;
 }
 
+.swizton-entry-table input {
+  width: 86px;
+  height: 32px;
+  padding: 0 8px;
+  text-align: right;
+}
+
+.swizton-entry-table td {
+  white-space: normal;
+}
+
+.sw-common-preview {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+#swiztonMappingGrid {
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+}
+
 .report-preview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(240px, 0.7fr);

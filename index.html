@@ -223,7 +223,7 @@
             </div>
 
             <div class="swizton-form">
-              <div class="filter-grid">
+              <div class="filter-grid swizton-common-fields">
                 <label>
                   <span>Month</span>
                   <input id="swiztonMonth" type="month" value="2026-04" />
@@ -242,78 +242,161 @@
                 </label>
               </div>
 
-              <div class="swizton-entry-sections">
-                <section class="entry-subpanel">
-                  <h3>Leads - UFE</h3>
-                  <div class="filter-grid">
-                    <label><span>Leads Generated</span><input id="swUfeLeadsGenerated" type="number" min="0" value="0" /></label>
-                    <label><span>Genuine Leads</span><input id="swUfeGenuineLeads" type="number" min="0" value="0" /></label>
-                    <label><span>RNR / WCB / Wrong Queries</span><input id="swUfeInvalidLeads" type="number" min="0" value="0" /></label>
-                    <label><span>OP Booked</span><input id="swUfeOpBooked" type="number" min="0" value="0" /></label>
-                    <label><span>OP Seen</span><input id="swUfeOpSeen" type="number" min="0" value="0" /></label>
-                  </div>
-                </section>
+              <section class="entry-subpanel">
+                <h3>Leads Entry</h3>
+                <div class="table-wrap">
+                  <table class="data-table compact swizton-entry-table">
+                    <thead>
+                      <tr class="group-row">
+                        <th rowspan="2">Sl. No.</th>
+                        <th rowspan="2">Month</th>
+                        <th rowspan="2">Centre</th>
+                        <th rowspan="2">Campaign</th>
+                        <th rowspan="2">Campaign Date</th>
+                        <th colspan="6">UFE</th>
+                        <th colspan="6">Vericose</th>
+                      </tr>
+                      <tr>
+                        <th>No. of Leads Generated</th>
+                        <th>Genuine Leads</th>
+                        <th>RNR, WCB, Wrong Queries</th>
+                        <th>No. of OP Booked</th>
+                        <th>No. of OP Seen</th>
+                        <th>% Conversion from Leads</th>
+                        <th>No. of Leads Generated</th>
+                        <th>Genuine Leads</th>
+                        <th>RNR, WCB, Wrong Queries</th>
+                        <th>No. of OP Booked</th>
+                        <th>No. of OP Seen</th>
+                        <th>% Conversion from Leads</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Auto</td>
+                        <td class="sw-common-preview" data-preview="month"></td>
+                        <td class="sw-common-preview" data-preview="centre"></td>
+                        <td class="sw-common-preview" data-preview="campaign"></td>
+                        <td class="sw-common-preview" data-preview="campaignDate"></td>
+                        <td><input id="swUfeLeadsGenerated" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeGenuineLeads" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeInvalidLeads" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeOpBooked" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeOpSeen" type="number" min="0" value="0" /></td>
+                        <td id="swUfeLeadConversionPreview">0%</td>
+                        <td><input id="swVericoseLeadsGenerated" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseGenuineLeads" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseInvalidLeads" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseOpBooked" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseOpSeen" type="number" min="0" value="0" /></td>
+                        <td id="swVericoseLeadConversionPreview">0%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
-                <section class="entry-subpanel">
-                  <h3>Leads - Vericose</h3>
-                  <div class="filter-grid">
-                    <label><span>Leads Generated</span><input id="swVericoseLeadsGenerated" type="number" min="0" value="0" /></label>
-                    <label><span>Genuine Leads</span><input id="swVericoseGenuineLeads" type="number" min="0" value="0" /></label>
-                    <label><span>RNR / WCB / Wrong Queries</span><input id="swVericoseInvalidLeads" type="number" min="0" value="0" /></label>
-                    <label><span>OP Booked</span><input id="swVericoseOpBooked" type="number" min="0" value="0" /></label>
-                    <label><span>OP Seen</span><input id="swVericoseOpSeen" type="number" min="0" value="0" /></label>
-                  </div>
-                </section>
-
-                <section class="entry-subpanel">
-                  <h3>Advices - UFE</h3>
-                  <div class="filter-grid">
-                    <label><span>Advices</span><input id="swUfeAdvices" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Done</span><input id="swUfeProcedureDone" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Scheduled</span><input id="swUfeProcedureScheduled" type="number" min="0" value="0" /></label>
-                    <label><span>Cash Issue</span><input id="swUfeCashIssue" type="number" min="0" value="0" /></label>
-                    <label><span>Insurance Issue</span><input id="swUfeInsuranceIssue" type="number" min="0" value="0" /></label>
-                    <label><span>Other Reasons</span><input id="swUfeOtherReasons" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Missed</span><input id="swUfeProcedureMissed" type="number" min="0" value="0" /></label>
-                    <label><span>Total Procedure Done</span><input id="swUfeTotalProcedureDone" type="number" min="0" value="0" /></label>
-                  </div>
-                </section>
-
-                <section class="entry-subpanel">
-                  <h3>Advices - Vericose</h3>
-                  <div class="filter-grid">
-                    <label><span>Advices</span><input id="swVericoseAdvices" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Done</span><input id="swVericoseProcedureDone" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Scheduled</span><input id="swVericoseProcedureScheduled" type="number" min="0" value="0" /></label>
-                    <label><span>Cash Issue</span><input id="swVericoseCashIssue" type="number" min="0" value="0" /></label>
-                    <label><span>Insurance Issue</span><input id="swVericoseInsuranceIssue" type="number" min="0" value="0" /></label>
-                    <label><span>Other Reasons</span><input id="swVericoseOtherReasons" type="number" min="0" value="0" /></label>
-                    <label><span>Procedure Missed</span><input id="swVericoseProcedureMissed" type="number" min="0" value="0" /></label>
-                    <label><span>Total Procedure Done</span><input id="swVericoseTotalProcedureDone" type="number" min="0" value="0" /></label>
-                  </div>
-                </section>
-              </div>
+              <section class="entry-subpanel">
+                <h3>Advices Entry</h3>
+                <div class="table-wrap">
+                  <table class="data-table compact swizton-entry-table advices">
+                    <thead>
+                      <tr class="group-row">
+                        <th rowspan="3">Sl. No.</th>
+                        <th rowspan="3">Month</th>
+                        <th rowspan="3">Centre</th>
+                        <th rowspan="3">Campaign</th>
+                        <th rowspan="3">Campaign Date</th>
+                        <th colspan="8">UFE</th>
+                        <th colspan="8">Vericose Vein</th>
+                      </tr>
+                      <tr>
+                        <th rowspan="2">No. of Advices</th>
+                        <th rowspan="2">Procedure Done</th>
+                        <th rowspan="2">Procedure Scheduled</th>
+                        <th colspan="3">Not Interested</th>
+                        <th rowspan="2">Procedure Missed</th>
+                        <th rowspan="2">% Advice Conversion</th>
+                        <th rowspan="2">No. of Advices</th>
+                        <th rowspan="2">Procedure Done</th>
+                        <th rowspan="2">Procedure Scheduled</th>
+                        <th colspan="3">Not Interested</th>
+                        <th rowspan="2">Procedure Missed</th>
+                        <th rowspan="2">% Advice Conversion</th>
+                      </tr>
+                      <tr>
+                        <th>Cash Issue</th>
+                        <th>Insurance Issue</th>
+                        <th>Other Reasons</th>
+                        <th>Cash Issue</th>
+                        <th>Insurance Issue</th>
+                        <th>Other Reasons</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>Auto</td>
+                        <td class="sw-common-preview" data-preview="month"></td>
+                        <td class="sw-common-preview" data-preview="centre"></td>
+                        <td class="sw-common-preview" data-preview="campaign"></td>
+                        <td class="sw-common-preview" data-preview="campaignDate"></td>
+                        <td><input id="swUfeAdvices" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeProcedureDone" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeProcedureScheduled" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeCashIssue" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeInsuranceIssue" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeOtherReasons" type="number" min="0" value="0" /></td>
+                        <td><input id="swUfeProcedureMissed" type="number" min="0" value="0" /></td>
+                        <td id="swUfeAdviceConversionPreview">0%</td>
+                        <td><input id="swVericoseAdvices" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseProcedureDone" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseProcedureScheduled" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseCashIssue" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseInsuranceIssue" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseOtherReasons" type="number" min="0" value="0" /></td>
+                        <td><input id="swVericoseProcedureMissed" type="number" min="0" value="0" /></td>
+                        <td id="swVericoseAdviceConversionPreview">0%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
             </div>
+
+            <section class="entry-subpanel">
+              <div class="panel-head">
+                <div>
+                  <h3>Consolidated Pull Mapping</h3>
+                  <p>Choose which manual entry field each consolidated column should pull from.</p>
+                </div>
+              </div>
+              <div class="filter-grid" id="swiztonMappingGrid"></div>
+            </section>
 
             <div class="table-wrap">
               <table class="data-table compact" id="swiztonConsolidatedTable">
                 <thead>
+                  <tr class="group-row">
+                    <th rowspan="2">Sl. No.</th>
+                    <th rowspan="2">Month</th>
+                    <th rowspan="2">Centre</th>
+                    <th rowspan="2">Campaign</th>
+                    <th rowspan="2">Campaign Date</th>
+                    <th rowspan="2">No. of Leads Generated (UFE)</th>
+                    <th rowspan="2">No. of Leads Generated (Vericose)</th>
+                    <th rowspan="2">No. of OP generated (UFE)</th>
+                    <th rowspan="2">No. of OP generated (Vericose)</th>
+                    <th rowspan="2">No. of Advices (UFE)</th>
+                    <th rowspan="2">No. of Advices (Vericose)</th>
+                    <th colspan="2">From Digital Marketing Leads</th>
+                    <th colspan="2">Total No. of Procedure Done</th>
+                    <th rowspan="2">Action</th>
+                  </tr>
                   <tr>
-                    <th>Month</th>
-                    <th>Centre</th>
-                    <th>Campaign</th>
-                    <th>Campaign Date</th>
-                    <th>UFE Leads</th>
-                    <th>Vericose Leads</th>
-                    <th>UFE OP Seen</th>
-                    <th>Vericose OP Seen</th>
-                    <th>UFE Advices</th>
-                    <th>Vericose Advices</th>
-                    <th>UFE Digital Procedures</th>
-                    <th>Vericose Digital Procedures</th>
-                    <th>UFE Total Procedures</th>
-                    <th>Vericose Total Procedures</th>
-                    <th>Action</th>
+                    <th>No. of Procedures Done (UFE)</th>
+                    <th>No. of Procedures Done (Vericose)</th>
+                    <th>No. of Procedures Done (UFE)</th>
+                    <th>No. of Procedures Done (Vericose)</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
