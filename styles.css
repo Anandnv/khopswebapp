@@ -340,6 +340,7 @@ select,
 input[type="text"],
 input[type="password"],
 input[type="date"],
+input[type="month"],
 input[type="number"] {
   height: 38px;
   border: 1px solid var(--line);
@@ -700,7 +701,10 @@ select:focus, input:focus {
 .filter-grid label { display: grid; gap: 5px; min-width: 0; }
 
 .filter-grid select,
-.filter-grid input[type="date"] {
+.filter-grid input[type="date"],
+.filter-grid input[type="month"],
+.filter-grid input[type="text"],
+.filter-grid input[type="number"] {
   width: 100%;
   min-width: 0;
   text-overflow: ellipsis;
@@ -712,6 +716,31 @@ select:focus, input:focus {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .04em;
+}
+
+.swizton-form {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.swizton-entry-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.entry-subpanel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.entry-subpanel h3 {
+  color: var(--ink);
+  font-size: .92rem;
+  margin-bottom: 12px;
 }
 
 .report-preview-grid {
@@ -967,6 +996,7 @@ select:focus, input:focus {
   :root { --sidebar-w: 240px; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .report-preview-grid { grid-template-columns: 1fr; }
+  .swizton-entry-sections { grid-template-columns: 1fr; }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -998,6 +1028,7 @@ select:focus, input:focus {
   .dashboard-grid,
   .filter-grid,
   .report-preview-grid,
+  .swizton-entry-sections,
   .donut-row,
   .hero-stats { grid-template-columns: 1fr; }
 

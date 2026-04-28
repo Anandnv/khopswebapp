@@ -154,7 +154,7 @@
 
           <div id="pendingAlert" style="margin-bottom:12px;"></div>
 
-          <section class="panel">
+          <section class="panel kh-company-section">
             <div class="panel-head">
               <div>
                 <h2>Report Download</h2>
@@ -216,7 +216,85 @@
                 <h2>Swizton Performance Summary</h2>
                 <p>Lead generation, OP conversion, advice conversion, and procedure performance.</p>
               </div>
+              <div class="form-actions">
+                <button class="button secondary" id="swiztonClearBtn" type="button">Clear Entry</button>
+                <button class="button primary" id="swiztonSaveBtn" type="button">Save Entry</button>
+              </div>
             </div>
+
+            <div class="swizton-form">
+              <div class="filter-grid">
+                <label>
+                  <span>Month</span>
+                  <input id="swiztonMonth" type="month" value="2026-04" />
+                </label>
+                <label>
+                  <span>Centre</span>
+                  <input id="swiztonCentre" type="text" placeholder="Thrissur" />
+                </label>
+                <label>
+                  <span>Campaign</span>
+                  <input id="swiztonCampaign" type="text" placeholder="#1" />
+                </label>
+                <label>
+                  <span>Campaign Date</span>
+                  <input id="swiztonCampaignDate" type="date" />
+                </label>
+              </div>
+
+              <div class="swizton-entry-sections">
+                <section class="entry-subpanel">
+                  <h3>Leads - UFE</h3>
+                  <div class="filter-grid">
+                    <label><span>Leads Generated</span><input id="swUfeLeadsGenerated" type="number" min="0" value="0" /></label>
+                    <label><span>Genuine Leads</span><input id="swUfeGenuineLeads" type="number" min="0" value="0" /></label>
+                    <label><span>RNR / WCB / Wrong Queries</span><input id="swUfeInvalidLeads" type="number" min="0" value="0" /></label>
+                    <label><span>OP Booked</span><input id="swUfeOpBooked" type="number" min="0" value="0" /></label>
+                    <label><span>OP Seen</span><input id="swUfeOpSeen" type="number" min="0" value="0" /></label>
+                  </div>
+                </section>
+
+                <section class="entry-subpanel">
+                  <h3>Leads - Vericose</h3>
+                  <div class="filter-grid">
+                    <label><span>Leads Generated</span><input id="swVericoseLeadsGenerated" type="number" min="0" value="0" /></label>
+                    <label><span>Genuine Leads</span><input id="swVericoseGenuineLeads" type="number" min="0" value="0" /></label>
+                    <label><span>RNR / WCB / Wrong Queries</span><input id="swVericoseInvalidLeads" type="number" min="0" value="0" /></label>
+                    <label><span>OP Booked</span><input id="swVericoseOpBooked" type="number" min="0" value="0" /></label>
+                    <label><span>OP Seen</span><input id="swVericoseOpSeen" type="number" min="0" value="0" /></label>
+                  </div>
+                </section>
+
+                <section class="entry-subpanel">
+                  <h3>Advices - UFE</h3>
+                  <div class="filter-grid">
+                    <label><span>Advices</span><input id="swUfeAdvices" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Done</span><input id="swUfeProcedureDone" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Scheduled</span><input id="swUfeProcedureScheduled" type="number" min="0" value="0" /></label>
+                    <label><span>Cash Issue</span><input id="swUfeCashIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Insurance Issue</span><input id="swUfeInsuranceIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Other Reasons</span><input id="swUfeOtherReasons" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Missed</span><input id="swUfeProcedureMissed" type="number" min="0" value="0" /></label>
+                    <label><span>Total Procedure Done</span><input id="swUfeTotalProcedureDone" type="number" min="0" value="0" /></label>
+                  </div>
+                </section>
+
+                <section class="entry-subpanel">
+                  <h3>Advices - Vericose</h3>
+                  <div class="filter-grid">
+                    <label><span>Advices</span><input id="swVericoseAdvices" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Done</span><input id="swVericoseProcedureDone" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Scheduled</span><input id="swVericoseProcedureScheduled" type="number" min="0" value="0" /></label>
+                    <label><span>Cash Issue</span><input id="swVericoseCashIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Insurance Issue</span><input id="swVericoseInsuranceIssue" type="number" min="0" value="0" /></label>
+                    <label><span>Other Reasons</span><input id="swVericoseOtherReasons" type="number" min="0" value="0" /></label>
+                    <label><span>Procedure Missed</span><input id="swVericoseProcedureMissed" type="number" min="0" value="0" /></label>
+                    <label><span>Total Procedure Done</span><input id="swVericoseTotalProcedureDone" type="number" min="0" value="0" /></label>
+                  </div>
+                </section>
+              </div>
+            </div>
+
             <div class="table-wrap">
               <table class="data-table compact" id="swiztonConsolidatedTable">
                 <thead>
@@ -231,8 +309,11 @@
                     <th>Vericose OP Seen</th>
                     <th>UFE Advices</th>
                     <th>Vericose Advices</th>
-                    <th>UFE Procedures</th>
-                    <th>Vericose Procedures</th>
+                    <th>UFE Digital Procedures</th>
+                    <th>Vericose Digital Procedures</th>
+                    <th>UFE Total Procedures</th>
+                    <th>Vericose Total Procedures</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody></tbody>
@@ -523,7 +604,7 @@
                 <select id="newCentreCompany" aria-label="Select company for new centre">
                   <option value="">Select company</option>
                   <option value="KH">KH</option>
-                  <option value="Swizton">Swizton</option>
+                  <option value="Swizton">Swizton performance only</option>
                 </select>
                 <button class="button primary" id="addCentreBtn">Add Centre</button>
               </div>

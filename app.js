@@ -31,6 +31,8 @@ let auditLog = [];
 let adminAuditLog = [];
 // admins: [{ id, name, username, passwordHash, assignedCentres: [0,1,...], createdAt }]
 let admins = [];
+let swiztonEntries = [];
+let swiztonEditingId = null;
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -370,6 +372,7 @@ function getAppState() {
   return {
     centers,
     procedureSettings,
+    swiztonEntries,
     entries,
     entryMeta,
     unlockRequests,
@@ -384,6 +387,7 @@ function applyAppState(state) {
   if (!state) return false;
   if (Array.isArray(state.centers)) centers = state.centers;
   if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
+  if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
@@ -441,6 +445,7 @@ async function loadFromSupabase() {
 
   centers = cfg.centers || centers;
   procedureSettings = cfg.procedures || procedureSettings;
+  if (Array.isArray(cfg.swizton_entries)) swiztonEntries = cfg.swizton_entries;
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
 
@@ -548,6 +553,7 @@ function loadFromLocalStorage() {
     const state = JSON.parse(saved);
     if (Array.isArray(state.centers)) centers = state.centers;
     if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
+    if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
       Object.assign(entries, state.entries);
@@ -630,6 +636,7 @@ async function saveConfig() {
     id: "main",
     centers,
     procedures: procedureSettings,
+    swizton_entries: swiztonEntries,
     admins,
     admin_audit_log: adminAuditLog,
     updated_at: new Date().toISOString()
@@ -639,18 +646,19 @@ async function saveConfig() {
     .from("app_config")
     .upsert(payload);
 
-  // Backward-compatible fallback for older schemas that do not yet have admin columns.
-  if (error && /admins|admin_audit_log/i.test(error.message || "")) {
-    ({ error } = await supabaseClient
-      .from("app_config")
-      .upsert({
-        id: "main",
-        centers,
-        procedures: procedureSettings,
-        updated_at: new Date().toISOString()
-      }));
+  // Backward-compatible fallback for older schemas. Local backup still keeps every field.
+  if (error && /admins|admin_audit_log|swizton_entries/i.test(error.message || "")) {
+    const fallbackPayload = { ...payload };
+    if (/admins|admin_audit_log/i.test(error.message || "")) {
+      delete fallbackPayload.admins;
+      delete fallbackPayload.admin_audit_log;
+    }
+    if (/swizton_entries/i.test(error.message || "")) {
+      delete fallbackPayload.swizton_entries;
+    }
+    ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
-      console.warn("Supabase app_config is missing admin columns. Admins are only safe in local backup until schema.sql is re-run.");
+      console.warn("Supabase app_config is missing newer columns. Re-run schema.sql so all app data is stored in the cloud.");
     }
   }
 
@@ -832,6 +840,10 @@ function ensureBootstrapData() {
   const hadUntaggedProcedures = procedureSettings.some((procedure) => !procedure.company);
   ensureProcedureCompanies();
   if (hadUntaggedProcedures) changed = true;
+  if (!Array.isArray(swiztonEntries)) {
+    swiztonEntries = [];
+    changed = true;
+  }
   return changed;
 }
 
@@ -1103,6 +1115,115 @@ function selectedReportType() {
   return document.getElementById("exportReportType")?.value || "consolidated";
 }
 
+const SWIZTON_NUMERIC_FIELDS = [
+  "ufeLeadsGenerated",
+  "ufeGenuineLeads",
+  "ufeInvalidLeads",
+  "ufeOpBooked",
+  "ufeOpSeen",
+  "vericoseLeadsGenerated",
+  "vericoseGenuineLeads",
+  "vericoseInvalidLeads",
+  "vericoseOpBooked",
+  "vericoseOpSeen",
+  "ufeAdvices",
+  "ufeProcedureDone",
+  "ufeProcedureScheduled",
+  "ufeCashIssue",
+  "ufeInsuranceIssue",
+  "ufeOtherReasons",
+  "ufeProcedureMissed",
+  "ufeTotalProcedureDone",
+  "vericoseAdvices",
+  "vericoseProcedureDone",
+  "vericoseProcedureScheduled",
+  "vericoseCashIssue",
+  "vericoseInsuranceIssue",
+  "vericoseOtherReasons",
+  "vericoseProcedureMissed",
+  "vericoseTotalProcedureDone"
+];
+
+const SWIZTON_FIELD_IDS = {
+  month: "swiztonMonth",
+  centre: "swiztonCentre",
+  campaign: "swiztonCampaign",
+  campaignDate: "swiztonCampaignDate",
+  ufeLeadsGenerated: "swUfeLeadsGenerated",
+  ufeGenuineLeads: "swUfeGenuineLeads",
+  ufeInvalidLeads: "swUfeInvalidLeads",
+  ufeOpBooked: "swUfeOpBooked",
+  ufeOpSeen: "swUfeOpSeen",
+  vericoseLeadsGenerated: "swVericoseLeadsGenerated",
+  vericoseGenuineLeads: "swVericoseGenuineLeads",
+  vericoseInvalidLeads: "swVericoseInvalidLeads",
+  vericoseOpBooked: "swVericoseOpBooked",
+  vericoseOpSeen: "swVericoseOpSeen",
+  ufeAdvices: "swUfeAdvices",
+  ufeProcedureDone: "swUfeProcedureDone",
+  ufeProcedureScheduled: "swUfeProcedureScheduled",
+  ufeCashIssue: "swUfeCashIssue",
+  ufeInsuranceIssue: "swUfeInsuranceIssue",
+  ufeOtherReasons: "swUfeOtherReasons",
+  ufeProcedureMissed: "swUfeProcedureMissed",
+  ufeTotalProcedureDone: "swUfeTotalProcedureDone",
+  vericoseAdvices: "swVericoseAdvices",
+  vericoseProcedureDone: "swVericoseProcedureDone",
+  vericoseProcedureScheduled: "swVericoseProcedureScheduled",
+  vericoseCashIssue: "swVericoseCashIssue",
+  vericoseInsuranceIssue: "swVericoseInsuranceIssue",
+  vericoseOtherReasons: "swVericoseOtherReasons",
+  vericoseProcedureMissed: "swVericoseProcedureMissed",
+  vericoseTotalProcedureDone: "swVericoseTotalProcedureDone"
+};
+
+function selectedSwiztonMonth() {
+  return document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
+}
+
+function getSwiztonRows(month = selectedSwiztonMonth()) {
+  return swiztonEntries
+    .filter((entry) => (entry.month || "").slice(0, 7) === month)
+    .sort((a, b) =>
+      (a.campaignDate || "").localeCompare(b.campaignDate || "") ||
+      (a.centre || "").localeCompare(b.centre || "") ||
+      (a.campaign || "").localeCompare(b.campaign || "")
+    );
+}
+
+function swiztonTotalProcedure(entry, type) {
+  const totalKey = `${type}TotalProcedureDone`;
+  const doneKey = `${type}ProcedureDone`;
+  return currencySafeNumber(entry[totalKey]) || currencySafeNumber(entry[doneKey]);
+}
+
+function swiztonTotals(rows = getSwiztonRows()) {
+  return rows.reduce((totals, entry) => {
+    totals.ufeLeads += currencySafeNumber(entry.ufeLeadsGenerated);
+    totals.vericoseLeads += currencySafeNumber(entry.vericoseLeadsGenerated);
+    totals.ufeOpSeen += currencySafeNumber(entry.ufeOpSeen);
+    totals.vericoseOpSeen += currencySafeNumber(entry.vericoseOpSeen);
+    totals.ufeAdvices += currencySafeNumber(entry.ufeAdvices);
+    totals.vericoseAdvices += currencySafeNumber(entry.vericoseAdvices);
+    totals.ufeDigitalProcedures += currencySafeNumber(entry.ufeProcedureDone);
+    totals.vericoseDigitalProcedures += currencySafeNumber(entry.vericoseProcedureDone);
+    totals.ufeTotalProcedures += swiztonTotalProcedure(entry, "ufe");
+    totals.vericoseTotalProcedures += swiztonTotalProcedure(entry, "vericose");
+    return totals;
+  }, {
+    ufeLeads: 0,
+    vericoseLeads: 0,
+    ufeOpSeen: 0,
+    vericoseOpSeen: 0,
+    ufeAdvices: 0,
+    vericoseAdvices: 0,
+    ufeDigitalProcedures: 0,
+    vericoseDigitalProcedures: 0,
+    ufeTotalProcedures: 0,
+    vericoseTotalProcedures: 0
+  });
+}
+
 function reportTotals(rows) {
   return rows.reduce(
     (totals, row) => {
@@ -1305,7 +1426,8 @@ function renderKhSummaryCards(totals, grandTotal, percent) {
 
 function renderSwiztonDashboard() {
   toggleCompanyDashboardSections();
-  const rows = [];
+  const rows = getSwiztonRows();
+  const totals = swiztonTotals(rows);
   const tbody = document.querySelector("#swiztonConsolidatedTable tbody");
   const tfoot = document.querySelector("#swiztonConsolidatedTable tfoot");
   if (!tbody || !tfoot) return;
@@ -1313,42 +1435,151 @@ function renderSwiztonDashboard() {
   tbody.innerHTML = rows.length
     ? rows.map((row) => `
         <tr>
-          <td>${escapeHtml(row.month)}</td>
-          <td>${escapeHtml(row.center)}</td>
+          <td>${escapeHtml(row.month || "")}</td>
+          <td>${escapeHtml(row.centre)}</td>
           <td>${escapeHtml(row.campaign)}</td>
-          <td>${escapeHtml(row.campaignDate)}</td>
-          <td>${row.ufeLeads}</td>
-          <td>${row.vericoseLeads}</td>
-          <td>${row.ufeOpSeen}</td>
-          <td>${row.vericoseOpSeen}</td>
-          <td>${row.ufeAdvices}</td>
-          <td>${row.vericoseAdvices}</td>
-          <td>${row.ufeProcedures}</td>
-          <td>${row.vericoseProcedures}</td>
+          <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
+          <td>${currencySafeNumber(row.ufeLeadsGenerated)}</td>
+          <td>${currencySafeNumber(row.vericoseLeadsGenerated)}</td>
+          <td>${currencySafeNumber(row.ufeOpSeen)}</td>
+          <td>${currencySafeNumber(row.vericoseOpSeen)}</td>
+          <td>${currencySafeNumber(row.ufeAdvices)}</td>
+          <td>${currencySafeNumber(row.vericoseAdvices)}</td>
+          <td>${currencySafeNumber(row.ufeProcedureDone)}</td>
+          <td>${currencySafeNumber(row.vericoseProcedureDone)}</td>
+          <td>${swiztonTotalProcedure(row, "ufe")}</td>
+          <td>${swiztonTotalProcedure(row, "vericose")}</td>
+          <td>
+            <button class="button secondary" data-swizton-edit="${row.id}">Edit</button>
+            <button class="button secondary" data-swizton-delete="${row.id}">Delete</button>
+          </td>
         </tr>
       `).join("")
-    : `<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries yet. Add Swizton centres first, then we can connect the Leads and Advices entry flow.</td></tr>`;
+    : `<tr><td colspan="15" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries for the selected month.</td></tr>`;
 
   tfoot.innerHTML = `
     <tr>
       <td colspan="4">Total</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
-      <td>0</td>
+      <td>${totals.ufeLeads}</td>
+      <td>${totals.vericoseLeads}</td>
+      <td>${totals.ufeOpSeen}</td>
+      <td>${totals.vericoseOpSeen}</td>
+      <td>${totals.ufeAdvices}</td>
+      <td>${totals.vericoseAdvices}</td>
+      <td>${totals.ufeDigitalProcedures}</td>
+      <td>${totals.vericoseDigitalProcedures}</td>
+      <td>${totals.ufeTotalProcedures}</td>
+      <td>${totals.vericoseTotalProcedures}</td>
+      <td></td>
     </tr>
   `;
 
   setSummaryCards([
-    { label: "Total Leads", value: "0", note: "UFE and Vericose combined" },
-    { label: "OP Seen", value: "0", note: "Lead-to-OP movement" },
-    { label: "Advices", value: "0", note: "UFE and Vericose advices" },
-    { label: "Procedure Done", value: "0", note: "Digital and total procedures" }
+    { label: "Total Leads", value: totals.ufeLeads + totals.vericoseLeads, note: "UFE and Vericose combined" },
+    { label: "OP Seen", value: totals.ufeOpSeen + totals.vericoseOpSeen, note: "Lead-to-OP movement" },
+    { label: "Advices", value: totals.ufeAdvices + totals.vericoseAdvices, note: "UFE and Vericose advices" },
+    { label: "Procedure Done", value: totals.ufeTotalProcedures + totals.vericoseTotalProcedures, note: "Total UFE and Vericose procedures" }
   ]);
+
+  tbody.querySelectorAll("[data-swizton-edit]").forEach((button) => {
+    button.addEventListener("click", () => editSwiztonEntry(Number(button.dataset.swiztonEdit)));
+  });
+  tbody.querySelectorAll("[data-swizton-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteSwiztonEntry(Number(button.dataset.swiztonDelete)));
+  });
+}
+
+function readSwiztonForm() {
+  const data = {
+    id: swiztonEditingId || Date.now(),
+    month: document.getElementById("swiztonMonth")?.value || selectedSwiztonMonth(),
+    centre: document.getElementById("swiztonCentre")?.value.trim() || "",
+    campaign: document.getElementById("swiztonCampaign")?.value.trim() || "",
+    campaignDate: document.getElementById("swiztonCampaignDate")?.value || "",
+    updatedAt: new Date().toISOString(),
+    updatedBy: getCurrentActorLabel()
+  };
+
+  SWIZTON_NUMERIC_FIELDS.forEach((field) => {
+    data[field] = currencySafeNumber(document.getElementById(SWIZTON_FIELD_IDS[field])?.value);
+  });
+
+  if (!data.ufeTotalProcedureDone) data.ufeTotalProcedureDone = data.ufeProcedureDone;
+  if (!data.vericoseTotalProcedureDone) data.vericoseTotalProcedureDone = data.vericoseProcedureDone;
+
+  return data;
+}
+
+function fillSwiztonForm(entry) {
+  Object.entries(SWIZTON_FIELD_IDS).forEach(([field, id]) => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    if (SWIZTON_NUMERIC_FIELDS.includes(field)) {
+      input.value = currencySafeNumber(entry?.[field]);
+    } else {
+      input.value = entry?.[field] || "";
+    }
+  });
+}
+
+function clearSwiztonForm() {
+  swiztonEditingId = null;
+  fillSwiztonForm({
+    month: selectedSwiztonMonth(),
+    centre: "",
+    campaign: "",
+    campaignDate: "",
+    ...Object.fromEntries(SWIZTON_NUMERIC_FIELDS.map((field) => [field, 0]))
+  });
+  document.getElementById("swiztonSaveBtn").textContent = "Save Entry";
+}
+
+function saveSwiztonEntry() {
+  if (currentRole !== "admin" && currentRole !== "superadmin") {
+    showToast("Only admins can enter Swizton performance data");
+    return;
+  }
+
+  const entry = readSwiztonForm();
+  if (!entry.month || !entry.centre || !entry.campaign) {
+    showToast("Enter month, centre, and campaign before saving");
+    return;
+  }
+
+  const index = swiztonEntries.findIndex((item) => item.id === entry.id);
+  if (index >= 0) {
+    swiztonEntries[index] = { ...swiztonEntries[index], ...entry };
+  } else {
+    swiztonEntries.push(entry);
+  }
+
+  clearSwiztonForm();
+  renderSwiztonDashboard();
+  renderAdminReportPreview();
+  persistSoon();
+  showToast("Swizton entry saved");
+}
+
+function editSwiztonEntry(id) {
+  const entry = swiztonEntries.find((item) => item.id === id);
+  if (!entry) return;
+  swiztonEditingId = id;
+  fillSwiztonForm(entry);
+  document.getElementById("swiztonSaveBtn").textContent = "Update Entry";
+  document.getElementById("swiztonPerformancePanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function deleteSwiztonEntry(id) {
+  const entry = swiztonEntries.find((item) => item.id === id);
+  if (!entry) return;
+  const ok = window.confirm(`Delete Swizton entry for ${entry.centre} / ${entry.campaign}?`);
+  if (!ok) return;
+  swiztonEntries = swiztonEntries.filter((item) => item.id !== id);
+  if (swiztonEditingId === id) clearSwiztonForm();
+  renderSwiztonDashboard();
+  renderAdminReportPreview();
+  persistSoon();
+  showToast("Swizton entry deleted");
 }
 
 function renderPendingAlert() {
@@ -1549,6 +1780,7 @@ function showView(name) {
   if (currentRole === "admin" && name === "entry") name = "admin";
   if (name === "consolidated") name = "admin"; // centre-only nav alias
   if (currentRole === "centre" && !["admin", "entry", "centre"].includes(name)) name = "admin";
+  if (activeCompany === "Swizton" && ["targets", "procedures", "users", "unlock", "centre"].includes(name)) name = "admin";
   // Superadmin-only views: block regular admin from accessing
   if (currentRole === "admin" && name === "superadmin") name = "admin";
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
@@ -2121,6 +2353,10 @@ function addCenter() {
     showToast("Enter the centre name and choose whether it belongs to KH or Swizton");
     return;
   }
+  if (company === "Swizton") {
+    showToast("Swizton does not use centre login accounts. Add the centre name inside Swizton performance entry.");
+    return;
+  }
   centers.push({
     name,
     company,
@@ -2180,7 +2416,13 @@ function removeCenter(index) {
 
 function refreshCenterLists() {
   const loginSelect = document.getElementById("loginCentre");
-  if (loginSelect) loginSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+  if (loginSelect) {
+    loginSelect.innerHTML = centers
+      .map((center, index) => ({ center, index }))
+      .filter(({ center }) => (center.company || "KH") === "KH")
+      .map(({ center, index }) => `<option value="${index}">${center.name}</option>`)
+      .join("");
+  }
   const exportSelect = document.getElementById("exportCentre");
   if (exportSelect) {
     const assigned = getCompanyScopedCentreIndexes();
@@ -2229,7 +2471,11 @@ function closeSidebar() {
 
 function setupLogin() {
   const centreSelect = document.getElementById("loginCentre");
-  centreSelect.innerHTML = centers.map((center, index) => `<option value="${index}">${center.name}</option>`).join("");
+  centreSelect.innerHTML = centers
+    .map((center, index) => ({ center, index }))
+    .filter(({ center }) => (center.company || "KH") === "KH")
+    .map(({ center, index }) => `<option value="${index}">${center.name}</option>`)
+    .join("");
 
   // Live lockout countdown
   setInterval(() => {
@@ -2295,6 +2541,9 @@ function setupMonthSelect() {
     const selectedMonth = monthSelect.value;
     const newReportDate = lastEntryDateForMonth(selectedMonth);
     setReportDate(newReportDate);
+    if (!swiztonEditingId && document.getElementById("swiztonMonth")) {
+      document.getElementById("swiztonMonth").value = selectedMonth;
+    }
     document.getElementById("exportMonth").value = selectedMonth;
     syncExportDatesToMonth(selectedMonth);
     refreshCenterRollups(reportDate);
@@ -2359,6 +2608,8 @@ function setupAdminControls() {
   document.getElementById("newCentreCompany")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") addCenter();
   });
+  document.getElementById("swiztonSaveBtn")?.addEventListener("click", saveSwiztonEntry);
+  document.getElementById("swiztonClearBtn")?.addEventListener("click", clearSwiztonForm);
 
   // Unlock modal
   document.getElementById("unlockModalClose")?.addEventListener("click", closeUnlockModal);
@@ -2554,7 +2805,137 @@ function consolidatedRowsToCsv(rows) {
   return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
+function swiztonRowsToCsv(rows) {
+  const totals = swiztonTotals(rows);
+  const header = [
+    "Month",
+    "Centre",
+    "Campaign",
+    "Campaign Date",
+    "UFE Leads Generated",
+    "UFE Genuine Leads",
+    "UFE RNR/WCB/Wrong Queries",
+    "UFE OP Booked",
+    "UFE OP Seen",
+    "UFE Lead Conversion %",
+    "Vericose Leads Generated",
+    "Vericose Genuine Leads",
+    "Vericose RNR/WCB/Wrong Queries",
+    "Vericose OP Booked",
+    "Vericose OP Seen",
+    "Vericose Lead Conversion %",
+    "UFE Advices",
+    "UFE Procedure Done",
+    "UFE Procedure Scheduled",
+    "UFE Not Interested - Cash",
+    "UFE Not Interested - Insurance",
+    "UFE Not Interested - Other",
+    "UFE Procedure Missed",
+    "UFE Advice Conversion %",
+    "Vericose Advices",
+    "Vericose Procedure Done",
+    "Vericose Procedure Scheduled",
+    "Vericose Not Interested - Cash",
+    "Vericose Not Interested - Insurance",
+    "Vericose Not Interested - Other",
+    "Vericose Procedure Missed",
+    "Vericose Advice Conversion %",
+    "UFE Total Procedure Done",
+    "Vericose Total Procedure Done"
+  ];
+  const percent = (numerator, denominator) => denominator ? Math.round((numerator / denominator) * 100) : 0;
+  const body = rows.map((row) => [
+    row.month,
+    row.centre,
+    row.campaign,
+    row.campaignDate ? displayDate(row.campaignDate) : "",
+    row.ufeLeadsGenerated,
+    row.ufeGenuineLeads,
+    row.ufeInvalidLeads,
+    row.ufeOpBooked,
+    row.ufeOpSeen,
+    percent(row.ufeOpSeen, row.ufeLeadsGenerated),
+    row.vericoseLeadsGenerated,
+    row.vericoseGenuineLeads,
+    row.vericoseInvalidLeads,
+    row.vericoseOpBooked,
+    row.vericoseOpSeen,
+    percent(row.vericoseOpSeen, row.vericoseLeadsGenerated),
+    row.ufeAdvices,
+    row.ufeProcedureDone,
+    row.ufeProcedureScheduled,
+    row.ufeCashIssue,
+    row.ufeInsuranceIssue,
+    row.ufeOtherReasons,
+    row.ufeProcedureMissed,
+    percent(row.ufeProcedureDone, row.ufeAdvices),
+    row.vericoseAdvices,
+    row.vericoseProcedureDone,
+    row.vericoseProcedureScheduled,
+    row.vericoseCashIssue,
+    row.vericoseInsuranceIssue,
+    row.vericoseOtherReasons,
+    row.vericoseProcedureMissed,
+    percent(row.vericoseProcedureDone, row.vericoseAdvices),
+    swiztonTotalProcedure(row, "ufe"),
+    swiztonTotalProcedure(row, "vericose")
+  ]);
+  const totalRow = [
+    "TOTAL",
+    "",
+    "",
+    "",
+    totals.ufeLeads,
+    "",
+    "",
+    "",
+    totals.ufeOpSeen,
+    percent(totals.ufeOpSeen, totals.ufeLeads),
+    totals.vericoseLeads,
+    "",
+    "",
+    "",
+    totals.vericoseOpSeen,
+    percent(totals.vericoseOpSeen, totals.vericoseLeads),
+    totals.ufeAdvices,
+    totals.ufeDigitalProcedures,
+    "",
+    "",
+    "",
+    "",
+    "",
+    percent(totals.ufeDigitalProcedures, totals.ufeAdvices),
+    totals.vericoseAdvices,
+    totals.vericoseDigitalProcedures,
+    "",
+    "",
+    "",
+    "",
+    "",
+    percent(totals.vericoseDigitalProcedures, totals.vericoseAdvices),
+    totals.ufeTotalProcedures,
+    totals.vericoseTotalProcedures
+  ];
+  return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function downloadSwiztonCsvReport() {
+  const month = selectedSwiztonMonth();
+  const rows = getSwiztonRows(month);
+  const csv = [
+    `Swizton Performance Report - ${month}`,
+    "",
+    swiztonRowsToCsv(rows)
+  ].join("\n");
+  downloadBlob(csv, `swizton-performance-${month}.csv`, "text/csv;charset=utf-8");
+  showToast("Swizton CSV downloaded");
+}
+
 function downloadFilteredCsvReport() {
+  if (activeCompany === "Swizton") {
+    downloadSwiztonCsvReport();
+    return;
+  }
   const isDaily = selectedReportType() === "daily";
   const rows = isDaily ? filteredDailyRows() : filteredConsolidatedRows();
   const range = getExportRange();
@@ -2631,7 +3012,89 @@ function svgPayerChart(totals) {
   return `<svg viewBox="0 0 540 130" role="img" aria-label="Payer split chart">${bars}</svg>`;
 }
 
+function swiztonProfessionalReportHtml() {
+  const month = selectedSwiztonMonth();
+  const rows = getSwiztonRows(month);
+  const totals = swiztonTotals(rows);
+  const percent = (numerator, denominator) => denominator ? Math.round((numerator / denominator) * 100) : 0;
+  const tableRows = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.month || "")}</td>
+      <td>${escapeHtml(row.centre || "")}</td>
+      <td>${escapeHtml(row.campaign || "")}</td>
+      <td>${row.campaignDate ? displayDate(row.campaignDate) : ""}</td>
+      <td>${currencySafeNumber(row.ufeLeadsGenerated)}</td>
+      <td>${currencySafeNumber(row.vericoseLeadsGenerated)}</td>
+      <td>${currencySafeNumber(row.ufeOpSeen)}</td>
+      <td>${currencySafeNumber(row.vericoseOpSeen)}</td>
+      <td>${currencySafeNumber(row.ufeAdvices)}</td>
+      <td>${currencySafeNumber(row.vericoseAdvices)}</td>
+      <td>${currencySafeNumber(row.ufeProcedureDone)}</td>
+      <td>${currencySafeNumber(row.vericoseProcedureDone)}</td>
+      <td>${swiztonTotalProcedure(row, "ufe")}</td>
+      <td>${swiztonTotalProcedure(row, "vericose")}</td>
+    </tr>
+  `).join("");
+  const totalProcedures = totals.ufeTotalProcedures + totals.vericoseTotalProcedures;
+  const totalLeads = totals.ufeLeads + totals.vericoseLeads;
+  const totalOpSeen = totals.ufeOpSeen + totals.vericoseOpSeen;
+  const totalAdvices = totals.ufeAdvices + totals.vericoseAdvices;
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Swizton Performance Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #18212f; margin: 0; background: #f5f7fa; }
+    main { max-width: 1180px; margin: 0 auto; padding: 30px; }
+    header { background: #101927; color: white; padding: 26px; border-radius: 8px; margin-bottom: 18px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 28px; }
+    p { color: #657184; margin-top: 6px; }
+    header p { color: #c8d4e4; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .card, section { background: white; border: 1px solid #dce3ea; border-radius: 8px; padding: 16px; }
+    .card span { display: block; color: #657184; font-size: 12px; text-transform: uppercase; font-weight: 700; }
+    .card strong { display: block; font-size: 26px; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; background: white; font-size: 12px; }
+    th, td { border: 1px solid #dce3ea; padding: 8px; text-align: right; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align: left; }
+    th { background: #e9f0f7; text-transform: uppercase; font-size: 11px; }
+    @media print { body { background: white; } main { padding: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Swizton Performance Report</h1>
+      <p>${escapeHtml(month)} | Leads, Advices, and Procedure Performance</p>
+    </header>
+    <div class="grid">
+      <div class="card"><span>Total Leads</span><strong>${totalLeads}</strong></div>
+      <div class="card"><span>OP Seen</span><strong>${totalOpSeen}</strong></div>
+      <div class="card"><span>Advices</span><strong>${totalAdvices}</strong></div>
+      <div class="card"><span>Procedure Done</span><strong>${totalProcedures}</strong></div>
+      <div class="card"><span>UFE Lead Conversion</span><strong>${percent(totals.ufeOpSeen, totals.ufeLeads)}%</strong></div>
+      <div class="card"><span>Vericose Lead Conversion</span><strong>${percent(totals.vericoseOpSeen, totals.vericoseLeads)}%</strong></div>
+      <div class="card"><span>UFE Advice Conversion</span><strong>${percent(totals.ufeDigitalProcedures, totals.ufeAdvices)}%</strong></div>
+      <div class="card"><span>Vericose Advice Conversion</span><strong>${percent(totals.vericoseDigitalProcedures, totals.vericoseAdvices)}%</strong></div>
+    </div>
+    <section>
+      <h2>Consolidated Summary</h2>
+      <table>
+        <thead><tr><th>Month</th><th>Centre</th><th>Campaign</th><th>Campaign Date</th><th>UFE Leads</th><th>Vericose Leads</th><th>UFE OP Seen</th><th>Vericose OP Seen</th><th>UFE Advices</th><th>Vericose Advices</th><th>UFE Digital Proc.</th><th>Vericose Digital Proc.</th><th>UFE Total Proc.</th><th>Vericose Total Proc.</th></tr></thead>
+        <tbody>${tableRows || `<tr><td colspan="14">No Swizton data for selected month.</td></tr>`}</tbody>
+        <tfoot><tr style="font-weight:700;background:#e9f0f7"><td colspan="4">Total</td><td>${totals.ufeLeads}</td><td>${totals.vericoseLeads}</td><td>${totals.ufeOpSeen}</td><td>${totals.vericoseOpSeen}</td><td>${totals.ufeAdvices}</td><td>${totals.vericoseAdvices}</td><td>${totals.ufeDigitalProcedures}</td><td>${totals.vericoseDigitalProcedures}</td><td>${totals.ufeTotalProcedures}</td><td>${totals.vericoseTotalProcedures}</td></tr></tfoot>
+      </table>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
 function professionalReportHtml() {
+  if (activeCompany === "Swizton") return swiztonProfessionalReportHtml();
+
   const range = getExportRange();
   const isDaily = selectedReportType() === "daily";
   const dailyRows = filteredDailyRows();
@@ -2792,9 +3255,12 @@ function professionalReportHtml() {
 
 function downloadProfessionalReport() {
   const range = getExportRange();
+  const fallbackName = activeCompany === "Swizton"
+    ? `swizton-performance-report-${selectedSwiztonMonth()}.html`
+    : `kh-professional-report-${range.fromDate}-to-${range.toDate}.html`;
   const reportWindow = window.open("", "_blank");
   if (!reportWindow) {
-    downloadBlob(professionalReportHtml(), `kh-professional-report-${range.fromDate}-to-${range.toDate}.html`, "text/html;charset=utf-8");
+    downloadBlob(professionalReportHtml(), fallbackName, "text/html;charset=utf-8");
     showToast("Popup blocked. HTML report downloaded instead.");
     return;
   }
@@ -2808,7 +3274,102 @@ function downloadProfessionalReport() {
   showToast("PDF-ready report opened");
 }
 
+function downloadSwiztonImageReport(format) {
+  const month = selectedSwiztonMonth();
+  const rows = getSwiztonRows(month);
+  const totals = swiztonTotals(rows);
+  const totalLeads = totals.ufeLeads + totals.vericoseLeads;
+  const totalOpSeen = totals.ufeOpSeen + totals.vericoseOpSeen;
+  const totalAdvices = totals.ufeAdvices + totals.vericoseAdvices;
+  const totalProcedures = totals.ufeTotalProcedures + totals.vericoseTotalProcedures;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1400;
+  canvas.height = 900;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#f5f7fa";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#101927";
+  ctx.fillRect(50, 50, 1300, 150);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 42px Arial";
+  ctx.fillText("Swizton Performance Report", 90, 115);
+  ctx.font = "400 24px Arial";
+  ctx.fillText(`${month} | Leads, Advices, and Procedures`, 90, 160);
+
+  const cards = [
+    ["Total Leads", totalLeads],
+    ["OP Seen", totalOpSeen],
+    ["Advices", totalAdvices],
+    ["Procedure Done", totalProcedures],
+    ["UFE Procedures", totals.ufeTotalProcedures],
+    ["Vericose Procedures", totals.vericoseTotalProcedures]
+  ];
+  cards.forEach(([label, value], index) => {
+    const x = 50 + (index % 3) * 430;
+    const y = 230 + Math.floor(index / 3) * 130;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#dce3ea";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, 400, 100, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#657184";
+    ctx.font = "700 18px Arial";
+    ctx.fillText(label.toUpperCase(), x + 24, y + 34);
+    ctx.fillStyle = "#18212f";
+    ctx.font = "700 38px Arial";
+    ctx.fillText(String(value), x + 24, y + 78);
+  });
+
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#dce3ea";
+  ctx.beginPath();
+  ctx.roundRect(50, 520, 1300, 270, 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#18212f";
+  ctx.font = "700 24px Arial";
+  ctx.fillText("Campaign Summary", 80, 565);
+  ctx.font = "700 18px Arial";
+  ctx.fillText("Centre", 80, 615);
+  ctx.fillText("Campaign", 290, 615);
+  ctx.fillText("Leads", 500, 615);
+  ctx.fillText("OP Seen", 650, 615);
+  ctx.fillText("Advices", 820, 615);
+  ctx.fillText("Procedures", 1000, 615);
+  ctx.font = "18px Arial";
+  rows.slice(0, 6).forEach((row, index) => {
+    const y = 655 + index * 32;
+    ctx.fillText(String(row.centre || ""), 80, y);
+    ctx.fillText(String(row.campaign || ""), 290, y);
+    ctx.fillText(String(currencySafeNumber(row.ufeLeadsGenerated) + currencySafeNumber(row.vericoseLeadsGenerated)), 500, y);
+    ctx.fillText(String(currencySafeNumber(row.ufeOpSeen) + currencySafeNumber(row.vericoseOpSeen)), 650, y);
+    ctx.fillText(String(currencySafeNumber(row.ufeAdvices) + currencySafeNumber(row.vericoseAdvices)), 820, y);
+    ctx.fillText(String(swiztonTotalProcedure(row, "ufe") + swiztonTotalProcedure(row, "vericose")), 1000, y);
+  });
+  if (!rows.length) {
+    ctx.fillText("No Swizton data for the selected month.", 80, 660);
+  }
+
+  const mime = format === "jpg" ? "image/jpeg" : "image/png";
+  const extension = format === "jpg" ? "jpg" : "png";
+  const link = document.createElement("a");
+  link.href = canvas.toDataURL(mime, 0.92);
+  link.download = `swizton-performance-${month}.${extension}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  showToast(`Swizton ${extension.toUpperCase()} report downloaded`);
+}
+
 function downloadImageReport(format) {
+  if (activeCompany === "Swizton") {
+    downloadSwiztonImageReport(format);
+    return;
+  }
+
   const rows = filteredDailyRows();
   const totals = reportTotals(rows);
   const forecast = reportForecast(rows);
@@ -3405,6 +3966,7 @@ function exportToFile() {
     appVersion:        "KHOPS_v2",
     centers,
     procedureSettings,
+    swiztonEntries,
     entries,
     entryMeta,
     unlockRequests,
@@ -3566,11 +4128,23 @@ function renderCompanyTabs() {
   container.querySelectorAll(".company-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.company === activeCompany);
   });
+  updateCompanyNavigation();
+}
+
+function updateCompanyNavigation() {
+  const hideForSwizton = activeCompany === "Swizton" && currentRole !== "centre";
+  ["targets", "procedures", "users", "unlock"].forEach((view) => {
+    document.querySelector(`.nav-item[data-view="${view}"]`)?.classList.toggle("hidden", hideForSwizton);
+  });
 }
 
 function setActiveCompany(company) {
   activeCompany = company;
   renderCompanyTabs();
+  if (company === "Swizton") {
+    const activeView = document.querySelector(".view.active")?.id?.replace("View", "");
+    if (["targets", "procedures", "users", "unlock", "centre"].includes(activeView)) showView("admin");
+  }
   refreshCenterLists();
   renderProcedures();
   renderConsolidated();
@@ -4803,6 +5377,8 @@ async function init() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) entryDateInput.value = today;
+  const swiztonMonthInput = document.getElementById("swiztonMonth");
+  if (swiztonMonthInput) swiztonMonthInput.value = today.slice(0, 7);
 
   // Sync export date range to current month so To Date is never stale
   const currentMonth = today.slice(0, 7);
@@ -4817,6 +5393,7 @@ async function init() {
   renderTargets();
   renderUsers();
   renderProcedures();
+  clearSwiztonForm();
   renderUnlockRequests();
   renderAuditLog();
   setupAuditFilters();

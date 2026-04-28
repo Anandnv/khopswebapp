@@ -10,6 +10,7 @@ create table if not exists app_config (
   id            text primary key default 'main',
   centers       jsonb not null default '[]',
   procedures    jsonb not null default '[]',
+  swizton_entries jsonb not null default '[]',
   admins        jsonb not null default '[]',
   admin_audit_log jsonb not null default '[]',
   updated_at    timestamptz not null default now()
@@ -17,6 +18,7 @@ create table if not exists app_config (
 
 alter table app_config add column if not exists admins jsonb not null default '[]';
 alter table app_config add column if not exists admin_audit_log jsonb not null default '[]';
+alter table app_config add column if not exists swizton_entries jsonb not null default '[]';
 
 -- ── 2. Daily entries ───────────────────────────────────────────────────────────
 -- One row per centre + date. op, referrals, procedures stored as JSONB.
