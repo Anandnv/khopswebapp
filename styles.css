@@ -724,6 +724,11 @@ select:focus, input:focus {
   margin-bottom: 20px;
 }
 
+/* Override filter-grid columns for Swizton common fields — 4 items not 5 */
+.swizton-common-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
 .swizton-entry-sections {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -743,15 +748,35 @@ select:focus, input:focus {
   margin-bottom: 12px;
 }
 
+/* Swizton tables scroll independently — don't blow out the panel */
+.swizton-entry-table {
+  min-width: 900px !important;
+  font-size: .78rem;
+}
+
+.swizton-entry-table.advices {
+  min-width: 1100px !important;
+}
+
 .swizton-entry-table input {
-  width: 86px;
-  height: 32px;
-  padding: 0 8px;
+  width: 68px;
+  height: 30px;
+  padding: 0 6px;
   text-align: right;
+  font-size: .78rem;
 }
 
 .swizton-entry-table td {
+  white-space: nowrap;
+  padding: 6px 8px;
+}
+
+.swizton-entry-table th {
+  font-size: .68rem;
+  padding: 6px 8px;
   white-space: normal;
+  word-break: break-word;
+  min-width: 72px;
 }
 
 .sw-common-preview {
