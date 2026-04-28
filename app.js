@@ -223,6 +223,24 @@ function centerMatchesActiveCompany(center) {
   return (center?.company || "KH") === activeCompany;
 }
 
+function ensureProcedureCompanies() {
+  if (!Array.isArray(procedureSettings)) procedureSettings = [];
+  procedureSettings.forEach((procedure) => {
+    if (!procedure.company) procedure.company = "KH";
+  });
+}
+
+function procedureMatchesCompany(procedure, company = activeCompany) {
+  return (procedure?.company || "KH") === company;
+}
+
+function activeCompanyProcedureRows(company = activeCompany) {
+  ensureProcedureCompanies();
+  return procedureSettings
+    .map((procedure, index) => ({ procedure, index }))
+    .filter(({ procedure }) => procedureMatchesCompany(procedure, company));
+}
+
 function getCompanyScopedCentreIndexes() {
   const assigned = getAssignedCentreIndexes();
   if (currentRole === "centre") return assigned;
@@ -811,23 +829,26 @@ function ensureBootstrapData() {
     procedureSettings = JSON.parse(JSON.stringify(DEFAULT_PROCEDURE_SETTINGS));
     changed = true;
   }
+  const hadUntaggedProcedures = procedureSettings.some((procedure) => !procedure.company);
+  ensureProcedureCompanies();
+  if (hadUntaggedProcedures) changed = true;
   return changed;
 }
 
 function activeProcedures() {
-  return procedureSettings.filter((procedure) => procedure.active).map((procedure) => procedure.name);
+  return activeCompanyProcedureRows().filter(({ procedure }) => procedure.active).map(({ procedure }) => procedure.name);
 }
 
 function countedProcedures() {
-  return procedureSettings.filter((procedure) => procedure.active && procedure.counted).map((procedure) => procedure.name);
+  return activeCompanyProcedureRows().filter(({ procedure }) => procedure.active && procedure.counted).map(({ procedure }) => procedure.name);
 }
 
 function cagProcedures() {
-  return procedureSettings.filter((procedure) => procedure.active && procedure.isCag).map((procedure) => procedure.name);
+  return activeCompanyProcedureRows().filter(({ procedure }) => procedure.active && procedure.isCag).map(({ procedure }) => procedure.name);
 }
 
 function isCountedProcedure(procedureName) {
-  return procedureSettings.some((procedure) => procedure.name === procedureName && procedure.active && procedure.counted);
+  return activeCompanyProcedureRows().some(({ procedure }) => procedure.name === procedureName && procedure.active && procedure.counted);
 }
 const opMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
 const adminOpsMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
@@ -1254,11 +1275,87 @@ function getSelectedEntryDate() {
   return document.getElementById("entryDate")?.value || reportDate;
 }
 
+function toggleCompanyDashboardSections() {
+  const isSwizton = activeCompany === "Swizton";
+  document.querySelectorAll(".kh-company-section").forEach((section) => {
+    section.classList.toggle("hidden", isSwizton);
+  });
+  document.getElementById("swiztonPerformancePanel")?.classList.toggle("hidden", !isSwizton);
+}
+
+function setSummaryCards(config) {
+  const cards = Array.from(document.querySelectorAll(".metric-card"));
+  config.forEach((item, index) => {
+    const card = cards[index];
+    if (!card) return;
+    card.querySelector("span").textContent = item.label;
+    card.querySelector("strong").textContent = item.value;
+    card.querySelector("small").textContent = item.note;
+  });
+}
+
+function renderKhSummaryCards(totals, grandTotal, percent) {
+  setSummaryCards([
+    { label: "Intervention Total", value: grandTotal, note: "Selected procedures only" },
+    { label: "CAG Total", value: totals.cagTotal, note: "All payers combined" },
+    { label: "Network Target", value: totals.target, note: "Admin assigned monthly" },
+    { label: "Achievement", value: `${percent}%`, note: `Till ${displayDate(reportDate)}` }
+  ]);
+}
+
+function renderSwiztonDashboard() {
+  toggleCompanyDashboardSections();
+  const rows = [];
+  const tbody = document.querySelector("#swiztonConsolidatedTable tbody");
+  const tfoot = document.querySelector("#swiztonConsolidatedTable tfoot");
+  if (!tbody || !tfoot) return;
+
+  tbody.innerHTML = rows.length
+    ? rows.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.month)}</td>
+          <td>${escapeHtml(row.center)}</td>
+          <td>${escapeHtml(row.campaign)}</td>
+          <td>${escapeHtml(row.campaignDate)}</td>
+          <td>${row.ufeLeads}</td>
+          <td>${row.vericoseLeads}</td>
+          <td>${row.ufeOpSeen}</td>
+          <td>${row.vericoseOpSeen}</td>
+          <td>${row.ufeAdvices}</td>
+          <td>${row.vericoseAdvices}</td>
+          <td>${row.ufeProcedures}</td>
+          <td>${row.vericoseProcedures}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="12" style="color:var(--muted);text-align:center;padding:18px">No Swizton performance entries yet. Add Swizton centres first, then we can connect the Leads and Advices entry flow.</td></tr>`;
+
+  tfoot.innerHTML = `
+    <tr>
+      <td colspan="4">Total</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+      <td>0</td>
+    </tr>
+  `;
+
+  setSummaryCards([
+    { label: "Total Leads", value: "0", note: "UFE and Vericose combined" },
+    { label: "OP Seen", value: "0", note: "Lead-to-OP movement" },
+    { label: "Advices", value: "0", note: "UFE and Vericose advices" },
+    { label: "Procedure Done", value: "0", note: "Digital and total procedures" }
+  ]);
+}
+
 function renderPendingAlert() {
   const container = document.getElementById("pendingAlert");
   if (!container) return;
 
-  if (currentRole !== "admin" && currentRole !== "superadmin") {
+  if (activeCompany === "Swizton" || (currentRole !== "admin" && currentRole !== "superadmin")) {
     container.innerHTML = "";
     return;
   }
@@ -1285,10 +1382,16 @@ function renderPendingAlert() {
 }
 
 function renderConsolidated() {
+  if (activeCompany === "Swizton") {
+    renderSwiztonDashboard();
+    renderPendingAlert();
+    return;
+  }
+
+  toggleCompanyDashboardSections();
   refreshCenterRollups(reportDate);
 
   document.getElementById("procedureReportTitle").textContent = `${activeCompany} - Procedures Till ${displayDate(reportDate)}`;
-  document.querySelector("#summaryPercent").nextElementSibling.textContent = `Till ${displayDate(reportDate)}`;
 
   const centerIndexes = getCompanyScopedCentreIndexes();
   const tbody = document.querySelector("#consolidatedTable tbody");
@@ -1382,10 +1485,7 @@ if (currentRole === "admin") {
     </tr>
   `;
 
-  document.getElementById("summaryIntervention").textContent = grandTotal;
-  document.getElementById("summaryCag").textContent = totals.cagTotal;
-  document.getElementById("summaryTarget").textContent = totals.target;
-  document.getElementById("summaryPercent").textContent = `${percent}%`;
+  renderKhSummaryCards(totals, grandTotal, percent);
 
   renderOpsConsolidated();
   renderPendingAlert();
@@ -1487,6 +1587,9 @@ function showView(name) {
     renderBackups();
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
   }
+  if (name === "procedures") {
+    renderProcedures();
+  }
   if (name === "superadmin") {
     renderSuperAdminPanel();
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
@@ -1509,6 +1612,8 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
 
   if (role === "centre") {
     const centre = centers[loggedInCentreIndex];
+    activeCompany = centre?.company || "KH";
+    renderCompanyTabs();
     document.getElementById("signedInName").textContent = `${centre.name} Centre User`;
     document.getElementById("signedInAccess").textContent = `Can update only ${centre.name} daily data`;
     document.getElementById("entryCentreName").textContent = `${centre.name} Centre Login`;
@@ -1906,7 +2011,23 @@ function renderUsers() {
 
 function renderProcedures() {
   const tbody = document.querySelector("#procedureSettingsTable tbody");
-  tbody.innerHTML = procedureSettings.map((procedure, index) => `
+  document.querySelector("#proceduresView h2").textContent = `${activeCompany} Procedure Settings`;
+  document.querySelector("#proceduresView .panel-head p").textContent =
+    activeCompany === "KH"
+      ? "Admin can decide which KH procedures are included in consolidated interventional counts."
+      : "Admin can add Swizton procedures from scratch without mixing KH procedure settings.";
+  const rows = activeCompanyProcedureRows();
+  if (!rows.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="color:var(--muted);text-align:center;padding:18px">
+          No ${activeCompany} procedures added yet. Add the first procedure above.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+  tbody.innerHTML = rows.map(({ procedure, index }) => `
     <tr>
       <td><input type="text" value="${procedure.name}" data-procedure-name="${index}" aria-label="Procedure name" /></td>
       <td><input type="checkbox" data-procedure-field="counted" data-procedure-index="${index}" ${procedure.counted ? "checked" : ""} /></td>
@@ -1945,13 +2066,15 @@ function renameProcedure(index, newName) {
     showToast("Procedure name cannot be blank");
     return;
   }
-  if (procedureSettings.some((item, itemIndex) => itemIndex !== index && item.name.toLowerCase() === cleanedName.toLowerCase())) {
+  const company = procedure.company || activeCompany;
+  if (procedureSettings.some((item, itemIndex) => itemIndex !== index && procedureMatchesCompany(item, company) && item.name.toLowerCase() === cleanedName.toLowerCase())) {
     renderProcedures();
     showToast("Procedure name already exists");
     return;
   }
   procedure.name = cleanedName;
-  Object.values(entries).forEach((centreEntries) => {
+  Object.entries(entries).forEach(([centreIndex, centreEntries]) => {
+    if ((centers[Number(centreIndex)]?.company || "KH") !== company) return;
     Object.values(centreEntries).forEach((entry) => {
       if (entry.procedures[oldName]) {
         entry.procedures[cleanedName] = entry.procedures[oldName];
@@ -1978,15 +2101,15 @@ function addProcedure() {
   const input = document.getElementById("newProcedureName");
   const name = input.value.trim();
   if (!name) return;
-  if (procedureSettings.some((procedure) => procedure.name.toLowerCase() === name.toLowerCase())) {
-    showToast("Procedure already exists");
+  if (procedureSettings.some((procedure) => procedureMatchesCompany(procedure, activeCompany) && procedure.name.toLowerCase() === name.toLowerCase())) {
+    showToast(`${activeCompany} procedure already exists`);
     return;
   }
-  procedureSettings.push({ name, counted: true, isCag: false, active: true });
+  procedureSettings.push({ name, company: activeCompany, counted: true, isCag: false, active: true });
   input.value = "";
   refreshAfterProcedureChange();
   persistSoon();
-  showToast("Procedure added");
+  showToast(`${activeCompany} procedure added`);
 }
 
 function addCenter() {
@@ -2254,6 +2377,20 @@ function syncExportDatesToMonth(month) {
 }
 
 function renderAdminReportPreview() {
+  if (activeCompany === "Swizton") {
+    const chart = document.getElementById("adminTrendChart");
+    if (chart) chart.innerHTML = `<p>No Swizton performance entries for this filter.</p>`;
+    const forecast = document.getElementById("forecastCard");
+    if (forecast) {
+      forecast.innerHTML = `
+        <span>Swizton Report Model</span>
+        <strong>Leads & Advices</strong>
+        <small>Swizton reporting follows the uploaded workbook format: Leads, OP seen, Advices, and Procedure Done split by UFE and Vericose.</small>
+      `;
+    }
+    return;
+  }
+
   const rows = filteredDailyRows();
   const forecast = reportForecast(rows);
   renderAdminTrend(rows);
@@ -3435,6 +3572,7 @@ function setActiveCompany(company) {
   activeCompany = company;
   renderCompanyTabs();
   refreshCenterLists();
+  renderProcedures();
   renderConsolidated();
   renderBars();
   renderPayerSplit();
