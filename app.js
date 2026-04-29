@@ -33,6 +33,36 @@ let adminAuditLog = [];
 let admins = [];
 let swiztonEntries = [];
 let swiztonEditingId = null;
+let pettyCash = { balances: {}, entries: {} };
+let pettyEditingId = null;
+let activeCentreDetailTab = "operations";
+const PETTY_PARTICULAR_OPTIONS = [
+  "By Cash",
+  "Staff welfare activity",
+  "Water Charge",
+  "Courier Charge",
+  "Call Duty Charge",
+  "Camp Expenses - Internal",
+  "Camp Expenses - External",
+  "Refeshment - Doctors",
+  "Refeshment - Staffs",
+  "Food Expenses - Doctors",
+  "Food Expenses - Staffs",
+  "Transport Charges",
+  "Referal Incentives - Doctors",
+  "Referal Incentives - Amb. Drivers",
+  "Referal Incentives - Auto Drivers",
+  "Inspection Charges",
+  "Travelling Expenses",
+  "Hardware Items",
+  "Printing & Stationary",
+  "Office Stationary",
+  "Purchase - House Keeping",
+  "Recharging",
+  "Repairs and Maintanance Exp.",
+  "Other Payments",
+  "Other Receipts"
+];
 let swiztonConsolidatedMapping = {
   ufeLeadsGenerated: "ufeLeadsGenerated",
   vericoseLeadsGenerated: "vericoseLeadsGenerated",
@@ -396,6 +426,7 @@ function getAppState() {
     procedureSettings,
     swiztonEntries,
     swiztonConsolidatedMapping,
+    pettyCash,
     entries,
     entryMeta,
     unlockRequests,
@@ -417,6 +448,9 @@ function applyAppState(state) {
     // Force these keys to "" even if the saved state has old auto-mapped values.
     swiztonConsolidatedMapping.ufeTotalProcedures = "";
     swiztonConsolidatedMapping.vericoseTotalProcedures = "";
+  }
+  if (state.pettyCash && typeof state.pettyCash === "object") {
+    pettyCash = normalizePettyCash(state.pettyCash);
   }
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
@@ -482,6 +516,9 @@ async function loadFromSupabase() {
     // Force these keys to "" even if the saved state has old auto-mapped values.
     swiztonConsolidatedMapping.ufeTotalProcedures = "";
     swiztonConsolidatedMapping.vericoseTotalProcedures = "";
+  }
+  if (cfg.petty_cash && typeof cfg.petty_cash === "object") {
+    pettyCash = normalizePettyCash(cfg.petty_cash);
   }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
@@ -578,6 +615,14 @@ function mergeLocalSupplementalState() {
     if ((!Array.isArray(adminAuditLog) || adminAuditLog.length === 0) && Array.isArray(state.adminAuditLog) && state.adminAuditLog.length) {
       adminAuditLog = state.adminAuditLog;
     }
+    if (
+      state.pettyCash &&
+      typeof state.pettyCash === "object" &&
+      !Object.keys(pettyCash.balances || {}).length &&
+      !Object.keys(pettyCash.entries || {}).length
+    ) {
+      pettyCash = normalizePettyCash(state.pettyCash);
+    }
   } catch (err) {
     console.warn("Could not merge local supplemental state:", err);
   }
@@ -597,6 +642,9 @@ function loadFromLocalStorage() {
       // Total procedures are always manually entered — force after any merge
       swiztonConsolidatedMapping.ufeTotalProcedures = "";
       swiztonConsolidatedMapping.vericoseTotalProcedures = "";
+    if (state.pettyCash && typeof state.pettyCash === "object") {
+      pettyCash = normalizePettyCash(state.pettyCash);
+    }
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
       Object.assign(entries, state.entries);
@@ -681,6 +729,7 @@ async function saveConfig() {
     procedures: procedureSettings,
     swizton_entries: swiztonEntries,
     swizton_mapping: swiztonConsolidatedMapping,
+    petty_cash: pettyCash,
     admins,
     admin_audit_log: adminAuditLog,
     updated_at: new Date().toISOString()
@@ -691,7 +740,7 @@ async function saveConfig() {
     .upsert(payload);
 
   // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping/i.test(error.message || "")) {
+  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash/i.test(error.message || "")) {
     const fallbackPayload = { ...payload };
     if (/admins|admin_audit_log/i.test(error.message || "")) {
       delete fallbackPayload.admins;
@@ -702,6 +751,9 @@ async function saveConfig() {
     }
     if (/swizton_mapping/i.test(error.message || "")) {
       delete fallbackPayload.swizton_mapping;
+    }
+    if (/petty_cash/i.test(error.message || "")) {
+      delete fallbackPayload.petty_cash;
     }
     ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
@@ -1160,6 +1212,722 @@ function consolidatedTotals(rows) {
 
 function selectedReportType() {
   return document.getElementById("exportReportType")?.value || "consolidated";
+}
+
+function normalizePettyCash(value = {}) {
+  return {
+    balances: value.balances && typeof value.balances === "object" ? value.balances : {},
+    entries: value.entries && typeof value.entries === "object" ? value.entries : {}
+  };
+}
+
+function ensurePettyCentre(centreIndex) {
+  pettyCash = normalizePettyCash(pettyCash);
+  if (!pettyCash.balances[centreIndex]) pettyCash.balances[centreIndex] = {};
+  if (!Array.isArray(pettyCash.entries[centreIndex])) pettyCash.entries[centreIndex] = [];
+  return pettyCash.entries[centreIndex];
+}
+
+function selectedPettyMonth() {
+  return document.getElementById("pettyMonth")?.value || todayIST().slice(0, 7);
+}
+
+function selectedAdminPettyMonth() {
+  return document.getElementById("adminPettyMonth")?.value || document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
+}
+
+function getPettyOpeningBalance(centreIndex, month) {
+  ensurePettyCentre(centreIndex);
+  return currencySafeNumber(pettyCash.balances[centreIndex]?.[month]);
+}
+
+function setPettyOpeningBalance(centreIndex, month, amount) {
+  ensurePettyCentre(centreIndex);
+  pettyCash.balances[centreIndex][month] = currencySafeNumber(amount);
+}
+
+function getPettyEntries(centreIndex, month = "") {
+  return ensurePettyCentre(centreIndex)
+    .filter((entry) => !month || (entry.date || "").slice(0, 7) === month)
+    .sort((a, b) =>
+      (a.date || "").localeCompare(b.date || "") ||
+      (a.createdAt || "").localeCompare(b.createdAt || "") ||
+      String(a.id).localeCompare(String(b.id))
+    );
+}
+
+function pettyRegisterRows(centreIndex, month) {
+  const rows = [];
+  let balance = getPettyOpeningBalance(centreIndex, month);
+  rows.push({
+    slNo: 1,
+    date: "",
+    particulars: "Opening Balance",
+    voucherNo: "",
+    receipts: 0,
+    payments: 0,
+    balance,
+    remarks: "",
+    isOpening: true
+  });
+  getPettyEntries(centreIndex, month).forEach((entry, index) => {
+    const receipts = currencySafeNumber(entry.receipts);
+    const payments = currencySafeNumber(entry.payments);
+    balance += receipts - payments;
+    rows.push({
+      ...entry,
+      slNo: index + 2,
+      receipts,
+      payments,
+      balance
+    });
+  });
+  return rows;
+}
+
+function pettyTotals(centreIndex, month) {
+  const entriesForMonth = getPettyEntries(centreIndex, month);
+  const opening = getPettyOpeningBalance(centreIndex, month);
+  const receipts = entriesForMonth.reduce((sum, entry) => sum + currencySafeNumber(entry.receipts), 0);
+  const payments = entriesForMonth.reduce((sum, entry) => sum + currencySafeNumber(entry.payments), 0);
+  return {
+    opening,
+    receipts,
+    payments,
+    closing: opening + receipts - payments,
+    count: entriesForMonth.length
+  };
+}
+
+function formatPettyAmount(value, blankZero = true) {
+  const amount = currencySafeNumber(value);
+  if (blankZero && amount === 0) return "";
+  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderPettyParticularOptions() {
+  document.querySelectorAll("[data-petty-particular-options]").forEach((list) => {
+    list.innerHTML = PETTY_PARTICULAR_OPTIONS
+      .map((option) => `<option value="${escapeHtml(option)}"></option>`)
+      .join("");
+  });
+}
+
+function renderPettySummary(summaryId, centreIndex, month) {
+  const summary = document.getElementById(summaryId);
+  if (!summary) return;
+  const totals = pettyTotals(centreIndex, month);
+  summary.innerHTML = `
+    <div><span>Opening Balance</span><strong>${formatPettyAmount(totals.opening, false)}</strong></div>
+    <div><span>Receipts</span><strong>${formatPettyAmount(totals.receipts, false)}</strong></div>
+    <div><span>Total Expense</span><strong>${formatPettyAmount(totals.payments, false)}</strong></div>
+    <div><span>Closing Balance</span><strong>${formatPettyAmount(totals.closing, false)}</strong></div>
+  `;
+}
+
+function renderPettyRegister(tableId, centreIndex, month, options = {}) {
+  const table = document.getElementById(tableId);
+  if (!table || !centers[centreIndex]) return;
+  const editable = options.editable === true;
+  const tbody = table.querySelector("tbody");
+  const tfoot = table.querySelector("tfoot");
+  const rows = pettyRegisterRows(centreIndex, month);
+  tbody.innerHTML = rows.map((row) => {
+    const actionCell = editable
+      ? row.isOpening
+        ? `<td class="petty-actions-cell"></td>`
+        : `<td class="petty-actions-cell">
+            <button class="text-button" type="button" data-petty-edit="${row.id}">Edit</button>
+            <button class="text-button danger" type="button" data-petty-delete="${row.id}">Delete</button>
+          </td>`
+      : "";
+    return `
+      <tr class="${row.isOpening ? "petty-opening-row" : ""}">
+        <td>${row.slNo}</td>
+        <td>${row.date ? displayDate(row.date) : ""}</td>
+        <td>${escapeHtml(row.particulars || "")}</td>
+        <td>${escapeHtml(row.voucherNo || "")}</td>
+        <td class="petty-amount">${formatPettyAmount(row.receipts)}</td>
+        <td class="petty-amount">${formatPettyAmount(row.payments)}</td>
+        <td class="petty-amount">${formatPettyAmount(row.balance, false)}</td>
+        <td>${escapeHtml(row.remarks || "")}</td>
+        ${actionCell}
+      </tr>
+    `;
+  }).join("");
+
+  const totals = pettyTotals(centreIndex, month);
+  const colspan = editable ? 5 : 5;
+  tfoot.innerHTML = `
+    <tr>
+      <td colspan="${colspan}">Total expense</td>
+      <td class="petty-amount">${formatPettyAmount(totals.payments, false)}</td>
+      <td></td>
+      <td></td>
+      ${editable ? "<td></td>" : ""}
+    </tr>
+  `;
+
+  if (options.summaryId) renderPettySummary(options.summaryId, centreIndex, month);
+
+  if (editable) {
+    tbody.querySelectorAll("[data-petty-edit]").forEach((button) => {
+      button.addEventListener("click", () => editPettyEntry(button.dataset.pettyEdit));
+    });
+    tbody.querySelectorAll("[data-petty-delete]").forEach((button) => {
+      button.addEventListener("click", () => deletePettyEntry(button.dataset.pettyDelete));
+    });
+  }
+}
+
+function renderPettyCashForCentre() {
+  if (currentRole !== "centre") return;
+  const centre = centers[loggedInCentreIndex];
+  if (!centre) return;
+  const monthInput = document.getElementById("pettyMonth");
+  const month = monthInput?.value || todayIST().slice(0, 7);
+  if (monthInput && !monthInput.value) monthInput.value = month;
+  const dateInput = document.getElementById("pettyDate");
+  if (dateInput && !dateInput.value) dateInput.value = todayIST();
+  document.getElementById("pettyCentreName").textContent = `${centre.name} Petty Cash`;
+  document.getElementById("pettyLockedCentreName").textContent = centre.name;
+  const balanceInput = document.getElementById("pettyOpeningBalance");
+  if (balanceInput && document.activeElement !== balanceInput) {
+    balanceInput.value = getPettyOpeningBalance(loggedInCentreIndex, month);
+  }
+  renderPettyRegister("pettyRegisterTable", loggedInCentreIndex, month, {
+    editable: true,
+    summaryId: "pettySummary"
+  });
+}
+
+function renderCentrePettyDetail() {
+  const centre = centers[activeCentreDashboardIndex];
+  if (!centre) return;
+  const monthInput = document.getElementById("adminPettyMonth");
+  const month = monthInput?.value || document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
+  if (monthInput && !monthInput.value) monthInput.value = month;
+  document.getElementById("adminPettyCentreName").textContent = `${centre.name} Petty Cash`;
+  renderPettyRegister("adminPettyRegisterTable", activeCentreDashboardIndex, month, {
+    editable: false,
+    summaryId: "adminPettySummary"
+  });
+}
+
+function resetPettyForm(resetDate = false) {
+  pettyEditingId = null;
+  const idInput = document.getElementById("pettyEntryId");
+  if (idInput) idInput.value = "";
+  document.getElementById("pettyFormTitle").textContent = "Add Petty Entry";
+  document.getElementById("pettySubmitBtn").textContent = "Add Entry";
+  document.getElementById("pettyCancelEditBtn").classList.add("hidden");
+  if (resetDate) document.getElementById("pettyDate").value = todayIST();
+  ["pettyParticulars", "pettyVoucherNo", "pettyReceipts", "pettyPayments", "pettyRemarks"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+}
+
+function savePettyOpeningBalance() {
+  if (currentRole !== "centre") {
+    showToast("Admins can view petty cash, but only centres can enter it.");
+    return;
+  }
+  const month = selectedPettyMonth();
+  const amount = currencySafeNumber(document.getElementById("pettyOpeningBalance").value);
+  setPettyOpeningBalance(loggedInCentreIndex, month, amount);
+  persistSoon();
+  renderPettyCashForCentre();
+  showToast("Opening balance saved");
+}
+
+function savePettyEntry() {
+  if (currentRole !== "centre") {
+    showToast("Admins can view petty cash, but only centres can enter it.");
+    return;
+  }
+  const date = document.getElementById("pettyDate").value;
+  const particulars = document.getElementById("pettyParticulars").value.trim();
+  const voucherNo = document.getElementById("pettyVoucherNo").value.trim();
+  const receipts = currencySafeNumber(document.getElementById("pettyReceipts").value);
+  const payments = currencySafeNumber(document.getElementById("pettyPayments").value);
+  const remarks = document.getElementById("pettyRemarks").value.trim();
+
+  if (!date || !particulars) {
+    showToast("Enter the date and particulars.");
+    return;
+  }
+  if (receipts < 0 || payments < 0) {
+    showToast("Receipts and payments cannot be negative.");
+    return;
+  }
+  if (receipts > 0 && payments > 0) {
+    showToast("Use either receipts or payments for one row, not both.");
+    return;
+  }
+  if (receipts === 0 && payments === 0) {
+    showToast("Enter a receipt or payment amount.");
+    return;
+  }
+
+  const month = date.slice(0, 7);
+  const monthInput = document.getElementById("pettyMonth");
+  if (monthInput && monthInput.value !== month) monthInput.value = month;
+  const entriesForCentre = ensurePettyCentre(loggedInCentreIndex);
+  const payload = {
+    date,
+    particulars,
+    voucherNo,
+    receipts,
+    payments,
+    remarks,
+    updatedAt: new Date().toISOString(),
+    updatedBy: centers[loggedInCentreIndex]?.name || "Centre"
+  };
+
+  if (pettyEditingId) {
+    const existing = entriesForCentre.find((entry) => String(entry.id) === String(pettyEditingId));
+    if (existing) Object.assign(existing, payload);
+  } else {
+    entriesForCentre.push({
+      id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      ...payload,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  persistSoon();
+  resetPettyForm(false);
+  renderPettyCashForCentre();
+  showToast("Petty entry saved");
+}
+
+function editPettyEntry(entryId) {
+  const entry = ensurePettyCentre(loggedInCentreIndex).find((item) => String(item.id) === String(entryId));
+  if (!entry) return;
+  pettyEditingId = entry.id;
+  document.getElementById("pettyEntryId").value = entry.id;
+  document.getElementById("pettyFormTitle").textContent = "Edit Petty Entry";
+  document.getElementById("pettySubmitBtn").textContent = "Update Entry";
+  document.getElementById("pettyCancelEditBtn").classList.remove("hidden");
+  document.getElementById("pettyMonth").value = (entry.date || todayIST()).slice(0, 7);
+  document.getElementById("pettyDate").value = entry.date || todayIST();
+  document.getElementById("pettyParticulars").value = entry.particulars || "";
+  document.getElementById("pettyVoucherNo").value = entry.voucherNo || "";
+  document.getElementById("pettyReceipts").value = entry.receipts || "";
+  document.getElementById("pettyPayments").value = entry.payments || "";
+  document.getElementById("pettyRemarks").value = entry.remarks || "";
+  renderPettyCashForCentre();
+}
+
+function deletePettyEntry(entryId) {
+  const ok = window.confirm("Delete this petty cash entry?");
+  if (!ok) return;
+  const entriesForCentre = ensurePettyCentre(loggedInCentreIndex);
+  pettyCash.entries[loggedInCentreIndex] = entriesForCentre.filter((entry) => String(entry.id) !== String(entryId));
+  if (String(pettyEditingId) === String(entryId)) resetPettyForm(false);
+  persistSoon();
+  renderPettyCashForCentre();
+  showToast("Petty entry deleted");
+}
+
+function setupPettyControls() {
+  renderPettyParticularOptions();
+  document.getElementById("pettyMonth")?.addEventListener("change", () => {
+    resetPettyForm(false);
+    renderPettyCashForCentre();
+  });
+  document.getElementById("pettyOpeningBalance")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") savePettyOpeningBalance();
+  });
+  document.getElementById("pettySaveBalanceBtn")?.addEventListener("click", savePettyOpeningBalance);
+  document.getElementById("pettySubmitBtn")?.addEventListener("click", savePettyEntry);
+  document.getElementById("pettyCancelEditBtn")?.addEventListener("click", () => {
+    resetPettyForm(true);
+    renderPettyCashForCentre();
+  });
+  document.getElementById("pettyDownloadBtn")?.addEventListener("click", () => {
+    downloadPettyCashReport(loggedInCentreIndex, selectedPettyMonth());
+  });
+  document.getElementById("adminPettyMonth")?.addEventListener("change", renderCentrePettyDetail);
+  document.getElementById("adminPettyDownloadBtn")?.addEventListener("click", () => {
+    downloadPettyCashReport(activeCentreDashboardIndex, selectedAdminPettyMonth());
+  });
+}
+
+function setCentreDetailTab(tab) {
+  activeCentreDetailTab = tab === "petty" ? "petty" : "operations";
+  document.querySelectorAll("[data-centre-detail]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.centreDetail === activeCentreDetailTab);
+  });
+  document.getElementById("centreOperationsDetail")?.classList.toggle("active", activeCentreDetailTab === "operations");
+  document.getElementById("centrePettyDetail")?.classList.toggle("active", activeCentreDetailTab === "petty");
+  if (activeCentreDetailTab === "petty") renderCentrePettyDetail();
+}
+
+function setupCentreDetailTabs() {
+  document.querySelectorAll("[data-centre-detail]").forEach((button) => {
+    button.addEventListener("click", () => setCentreDetailTab(button.dataset.centreDetail));
+  });
+}
+
+function shiftPettyCashAfterCenterRemoval(removedIndex) {
+  const shiftedBalances = {};
+  const shiftedEntries = {};
+  Object.keys(pettyCash.balances || {}).forEach((key) => {
+    const oldIndex = Number(key);
+    if (oldIndex < removedIndex) shiftedBalances[oldIndex] = pettyCash.balances[key];
+    if (oldIndex > removedIndex) shiftedBalances[oldIndex - 1] = pettyCash.balances[key];
+  });
+  Object.keys(pettyCash.entries || {}).forEach((key) => {
+    const oldIndex = Number(key);
+    if (oldIndex < removedIndex) shiftedEntries[oldIndex] = pettyCash.entries[key];
+    if (oldIndex > removedIndex) shiftedEntries[oldIndex - 1] = pettyCash.entries[key];
+  });
+  pettyCash = { balances: shiftedBalances, entries: shiftedEntries };
+}
+
+function excelColumnName(index) {
+  let name = "";
+  while (index > 0) {
+    const remainder = (index - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    index = Math.floor((index - 1) / 26);
+  }
+  return name;
+}
+
+function excelCellRef(row, col) {
+  return `${excelColumnName(col)}${row}`;
+}
+
+function excelDateSerial(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  return Math.round((date.getTime() - Date.UTC(1899, 11, 30)) / 86400000);
+}
+
+function xmlEscape(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function xlsxCell(row, col, value, styleId = 0, options = {}) {
+  const ref = excelCellRef(row, col);
+  const style = styleId ? ` s="${styleId}"` : "";
+  if (options.formula) {
+    const cached = Number.isFinite(options.cachedValue) ? `<v>${options.cachedValue}</v>` : "";
+    return `<c r="${ref}"${style}><f>${xmlEscape(options.formula)}</f>${cached}</c>`;
+  }
+  if (value === "" || value === null || value === undefined) return `<c r="${ref}"${style}/>`;
+  if (options.type === "date") return `<c r="${ref}"${style}><v>${excelDateSerial(value)}</v></c>`;
+  if (typeof value === "number") return `<c r="${ref}"${style}><v>${value}</v></c>`;
+  return `<c r="${ref}" t="inlineStr"${style}><is><t>${xmlEscape(value)}</t></is></c>`;
+}
+
+function xlsxRow(rowNumber, cells) {
+  return `<row r="${rowNumber}" ht="23.25" customHeight="1">${cells.join("")}</row>`;
+}
+
+function pettySheetXml(centreIndex, month) {
+  const entriesForMonth = getPettyEntries(centreIndex, month);
+  const totalRow = entriesForMonth.length + 4;
+  let runningBalance = getPettyOpeningBalance(centreIndex, month);
+  const rows = [];
+
+  rows.push(xlsxRow(1, [1, 2, 3, 4, 5, 6, 7, 8].map((col) => xlsxCell(1, col, "", 1))));
+  rows.push(xlsxRow(2, [
+    xlsxCell(2, 1, "SL No.", 2),
+    xlsxCell(2, 2, "Date", 2),
+    xlsxCell(2, 3, "Particulars", 2),
+    xlsxCell(2, 4, "Voucher No.", 2),
+    xlsxCell(2, 5, "Receipts", 2),
+    xlsxCell(2, 6, "Payments", 2),
+    xlsxCell(2, 7, "Balance", 2),
+    xlsxCell(2, 8, "Remarks", 2)
+  ]));
+  rows.push(xlsxRow(3, [
+    xlsxCell(3, 1, 1, 3),
+    xlsxCell(3, 2, "", 4),
+    xlsxCell(3, 3, "Opening Balance", 4),
+    xlsxCell(3, 4, "", 4),
+    xlsxCell(3, 5, "", 4),
+    xlsxCell(3, 6, "", 4),
+    xlsxCell(3, 7, runningBalance, 5),
+    xlsxCell(3, 8, "", 4)
+  ]));
+
+  entriesForMonth.forEach((entry, index) => {
+    const rowNumber = index + 4;
+    const receipts = currencySafeNumber(entry.receipts);
+    const payments = currencySafeNumber(entry.payments);
+    runningBalance += receipts - payments;
+    rows.push(xlsxRow(rowNumber, [
+      xlsxCell(rowNumber, 1, index + 2, 6),
+      xlsxCell(rowNumber, 2, entry.date || "", 7, { type: "date" }),
+      xlsxCell(rowNumber, 3, entry.particulars || "", 8),
+      xlsxCell(rowNumber, 4, entry.voucherNo || "", 8),
+      xlsxCell(rowNumber, 5, receipts || "", 9),
+      xlsxCell(rowNumber, 6, payments || "", 9),
+      xlsxCell(rowNumber, 7, "", 9, { formula: `G${rowNumber - 1}+E${rowNumber}-F${rowNumber}`, cachedValue: runningBalance }),
+      xlsxCell(rowNumber, 8, entry.remarks || "", 8)
+    ]));
+  });
+
+  const totalPayments = entriesForMonth.reduce((sum, entry) => sum + currencySafeNumber(entry.payments), 0);
+  const totalFormula = entriesForMonth.length ? `SUM(F4:F${totalRow - 1})` : "";
+  rows.push(xlsxRow(totalRow, [
+    xlsxCell(totalRow, 1, "Total expense", 10),
+    xlsxCell(totalRow, 2, "", 10),
+    xlsxCell(totalRow, 3, "", 10),
+    xlsxCell(totalRow, 4, "", 10),
+    xlsxCell(totalRow, 5, "", 10),
+    xlsxCell(totalRow, 6, totalFormula ? "" : totalPayments, 11, totalFormula ? { formula: totalFormula, cachedValue: totalPayments } : {}),
+    xlsxCell(totalRow, 7, "", 12),
+    xlsxCell(totalRow, 8, "", 12)
+  ]));
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:H${totalRow}"/>
+  <sheetViews><sheetView workbookViewId="0"/></sheetViews>
+  <sheetFormatPr defaultRowHeight="15"/>
+  <cols>
+    <col min="1" max="1" width="30.7109375" customWidth="1"/>
+    <col min="2" max="2" width="11.5703125" customWidth="1"/>
+    <col min="3" max="3" width="33.28515625" customWidth="1"/>
+    <col min="4" max="4" width="13.7109375" customWidth="1"/>
+    <col min="5" max="7" width="11.85546875" customWidth="1"/>
+    <col min="8" max="8" width="59.5703125" customWidth="1"/>
+  </cols>
+  <sheetData>${rows.join("")}</sheetData>
+  <mergeCells count="2">
+    <mergeCell ref="A1:H1"/>
+    <mergeCell ref="A${totalRow}:E${totalRow}"/>
+  </mergeCells>
+  <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+</worksheet>`;
+}
+
+function pettyStylesXml() {
+  const currencyFormat = "&quot;&#8377;&quot;\\ #,##0.00;[Red]&quot;&#8377;&quot;\\ \\-#,##0.00";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="${currencyFormat}"/></numFmts>
+  <fonts count="3">
+    <font><sz val="11"/><name val="Calibri"/></font>
+    <font><sz val="11"/><name val="Book Antiqua"/></font>
+    <font><b/><sz val="11"/><color rgb="FF7F6000"/><name val="Book Antiqua"/></font>
+  </fonts>
+  <fills count="5">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFCCA677"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFF8F2EB"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFFFFF"/><bgColor indexed="64"/></patternFill></fill>
+  </fills>
+  <borders count="4">
+    <border><left/><right/><top/><bottom/><diagonal/></border>
+    <border><left style="medium"><color auto="1"/></left><right style="medium"><color auto="1"/></right><top style="medium"><color auto="1"/></top><bottom style="medium"><color auto="1"/></bottom><diagonal/></border>
+    <border><left style="thick"><color auto="1"/></left><right style="thick"><color auto="1"/></right><top style="thick"><color auto="1"/></top><bottom style="medium"><color auto="1"/></bottom><diagonal/></border>
+    <border><left style="medium"><color auto="1"/></left><right style="medium"><color auto="1"/></right><top style="medium"><color auto="1"/></top><bottom style="thick"><color auto="1"/></bottom><diagonal/></border>
+  </borders>
+  <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+  <cellXfs count="13">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="0" fontId="2" fillId="2" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="1" fillId="3" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" wrapText="1"/></xf>
+    <xf numFmtId="14" fontId="1" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="1" fillId="4" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" wrapText="1"/></xf>
+    <xf numFmtId="164" fontId="1" fillId="4" borderId="3" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="3" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment wrapText="1"/></xf>
+  </cellXfs>
+  <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>`;
+}
+
+function crc32(bytes) {
+  if (!crc32.table) {
+    crc32.table = Array.from({ length: 256 }, (_, index) => {
+      let c = index;
+      for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  bytes.forEach((byte) => {
+    crc = crc32.table[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function setZipUint16(view, offset, value) {
+  view.setUint16(offset, value, true);
+}
+
+function setZipUint32(view, offset, value) {
+  view.setUint32(offset, value >>> 0, true);
+}
+
+function zipStore(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const nameBytes = encoder.encode(file.name);
+    const dataBytes = typeof file.content === "string" ? encoder.encode(file.content) : file.content;
+    const crc = crc32(dataBytes);
+
+    const local = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(local.buffer);
+    setZipUint32(localView, 0, 0x04034b50);
+    setZipUint16(localView, 4, 20);
+    setZipUint16(localView, 6, 0x0800);
+    setZipUint16(localView, 8, 0);
+    setZipUint16(localView, 10, 0);
+    setZipUint16(localView, 12, 0);
+    setZipUint32(localView, 14, crc);
+    setZipUint32(localView, 18, dataBytes.length);
+    setZipUint32(localView, 22, dataBytes.length);
+    setZipUint16(localView, 26, nameBytes.length);
+    setZipUint16(localView, 28, 0);
+    local.set(nameBytes, 30);
+    localParts.push(local, dataBytes);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(central.buffer);
+    setZipUint32(centralView, 0, 0x02014b50);
+    setZipUint16(centralView, 4, 20);
+    setZipUint16(centralView, 6, 20);
+    setZipUint16(centralView, 8, 0x0800);
+    setZipUint16(centralView, 10, 0);
+    setZipUint16(centralView, 12, 0);
+    setZipUint16(centralView, 14, 0);
+    setZipUint32(centralView, 16, crc);
+    setZipUint32(centralView, 20, dataBytes.length);
+    setZipUint32(centralView, 24, dataBytes.length);
+    setZipUint16(centralView, 28, nameBytes.length);
+    setZipUint16(centralView, 30, 0);
+    setZipUint16(centralView, 32, 0);
+    setZipUint16(centralView, 34, 0);
+    setZipUint16(centralView, 36, 0);
+    setZipUint32(centralView, 38, 0);
+    setZipUint32(centralView, 42, offset);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+    offset += local.length + dataBytes.length;
+  });
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  setZipUint32(endView, 0, 0x06054b50);
+  setZipUint16(endView, 4, 0);
+  setZipUint16(endView, 6, 0);
+  setZipUint16(endView, 8, files.length);
+  setZipUint16(endView, 10, files.length);
+  setZipUint32(endView, 12, centralSize);
+  setZipUint32(endView, 16, centralOffset);
+  setZipUint16(endView, 20, 0);
+
+  return new Blob([...localParts, ...centralParts, end], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  });
+}
+
+function buildPettyCashWorkbookBlob(centreIndex, month) {
+  const files = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr calcId="0" fullCalcOnLoad="1" forceFullCalc="1"/>
+</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+    },
+    { name: "xl/worksheets/sheet1.xml", content: pettySheetXml(centreIndex, month) },
+    { name: "xl/styles.xml", content: pettyStylesXml() },
+    {
+      name: "docProps/core.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>Petty Cash Register</dc:title>
+  <dc:creator>KH Operations</dc:creator>
+  <cp:lastModifiedBy>KH Operations</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified>
+</cp:coreProperties>`
+    },
+    {
+      name: "docProps/app.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>KH Operations</Application>
+  <DocSecurity>0</DocSecurity>
+  <ScaleCrop>false</ScaleCrop>
+  <HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>1</vt:i4></vt:variant></vt:vector></HeadingPairs>
+  <TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Sheet1</vt:lpstr></vt:vector></TitlesOfParts>
+</Properties>`
+    }
+  ];
+  return zipStore(files);
+}
+
+function downloadPettyCashReport(centreIndex, month) {
+  const centre = centers[centreIndex];
+  if (!centre) return;
+  const blob = buildPettyCashWorkbookBlob(centreIndex, month);
+  const safeCentre = centre.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `petty-cash-${safeCentre || "centre"}-${month}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Petty cash Excel downloaded");
 }
 
 const SWIZTON_NUMERIC_FIELDS = [
@@ -1975,8 +2743,9 @@ function renderPayerSplit() {
 function showView(name) {
   if (currentRole === "admin" && name === "entry") name = "admin";
   if (name === "consolidated") name = "admin"; // centre-only nav alias
-  if (currentRole === "centre" && !["admin", "entry", "centre"].includes(name)) name = "admin";
-  if (activeCompany === "Swizton" && ["targets", "procedures", "users", "unlock", "centre"].includes(name)) name = "admin";
+  if (currentRole !== "centre" && name === "petty") name = "admin";
+  if (currentRole === "centre" && !["admin", "entry", "centre", "petty"].includes(name)) name = "admin";
+  if (activeCompany === "Swizton" && ["targets", "procedures", "users", "unlock", "centre", "petty"].includes(name)) name = "admin";
   // Superadmin-only views: block regular admin from accessing
   if (currentRole === "admin" && name === "superadmin") name = "admin";
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
@@ -1989,6 +2758,7 @@ function showView(name) {
     procedures: "Procedure Settings",
     users: "User Controls",
     centre: "Centre Dashboard",
+    petty: "Petty Cash",
     unlock: "Edit Requests",
     audit: "Audit Log",
     backup: "Backup & Restore",
@@ -2014,6 +2784,9 @@ function showView(name) {
   if (name === "backup") {
     renderBackups();
     setTimeout(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, 50);
+  }
+  if (name === "petty") {
+    renderPettyCashForCentre();
   }
   if (name === "procedures") {
     renderProcedures();
@@ -2048,6 +2821,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     document.getElementById("entryAccessMessage").textContent = `This user can enter only ${centre.name} data. Other centres are not selectable.`;
     document.getElementById("lockedCentreName").textContent = centre.name;
     renderEntryForCurrentDate();
+    renderPettyCashForCentre();
     document.getElementById("exportCentre").value = String(loggedInCentreIndex);
     document.getElementById("exportCentre").disabled = true;
     renderConsolidated();
@@ -2216,7 +2990,7 @@ function updateFromDailyEntry() {
   showToast(`${center.name} entry saved and reflected in reports`);
 }
 
-function openCentre(index) {
+function openCentre(index, detailTab = "operations") {
   activeCentreDashboardIndex = index;
   const center = centers[index];
   const percent = percentFor(center);
@@ -2227,7 +3001,9 @@ function openCentre(index) {
   renderTrend(center);
   renderSnapshot(center);
   renderProcedureTable("centreProcedureTable", false, index, reportDate);
+  renderCentrePettyDetail();
   showView("centre");
+  setCentreDetailTab(detailTab);
 }
 
 function renderTrend(center) {
@@ -2598,6 +3374,7 @@ function removeCenter(index) {
   });
   Object.keys(entries).forEach((key) => delete entries[key]);
   Object.assign(entries, shifted);
+  shiftPettyCashAfterCenterRemoval(index);
   loggedInCentreIndex = Math.min(loggedInCentreIndex, centers.length - 1);
   refreshCenterLists();
   renderTargets();
@@ -2747,8 +3524,10 @@ function setupMonthSelect() {
     renderBars();
     renderPayerSplit();
     renderAdminReportPreview();
+    const adminPettyMonth = document.getElementById("adminPettyMonth");
+    if (adminPettyMonth) adminPettyMonth.value = selectedMonth;
     if (document.getElementById("centreView").classList.contains("active")) {
-      openCentre(activeCentreDashboardIndex);
+      openCentre(activeCentreDashboardIndex, activeCentreDetailTab);
     }
   });
 }
@@ -5489,6 +6268,8 @@ async function init() {
   setupExportFilters();
   setupExportMenus();
   setupAdminControls();
+  setupPettyControls();
+  setupCentreDetailTabs();
   setupSuperAdminControls();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
   document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
@@ -5500,6 +6281,10 @@ async function init() {
   if (entryDateInput) entryDateInput.value = today;
   const swiztonMonthInput = document.getElementById("swiztonMonth");
   if (swiztonMonthInput) swiztonMonthInput.value = today.slice(0, 7);
+  const pettyMonthInput = document.getElementById("pettyMonth");
+  if (pettyMonthInput) pettyMonthInput.value = today.slice(0, 7);
+  const adminPettyMonthInput = document.getElementById("adminPettyMonth");
+  if (adminPettyMonthInput) adminPettyMonthInput.value = today.slice(0, 7);
 
   // Sync export date range to current month so To Date is never stale
   const currentMonth = today.slice(0, 7);
@@ -5511,6 +6296,8 @@ async function init() {
   renderPayerSplit();
   renderAdminReportPreview();
   renderEntryForCurrentDate();
+  renderPettyCashForCentre();
+  renderCentrePettyDetail();
   renderTargets();
   renderUsers();
   renderProcedures();

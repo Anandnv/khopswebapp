@@ -44,7 +44,7 @@ window.KH_CONFIG = {
 
 For a stricter production build, replace the simple prototype login with Supabase Auth and role-based database policies.
 
-If you already created the Supabase tables before the admin/super-admin feature was added, re-run `supabase/schema.sql` once so `app_config` gets the new `admins` and `admin_audit_log` columns. Without that update, newly created admins may only survive in the current browser's local backup.
+If you already created the Supabase tables before newer admin, Swizton, or petty-cash features were added, re-run `supabase/schema.sql` once so `app_config` gets the latest `admins`, `admin_audit_log`, `swizton_entries`, `swizton_mapping`, and `petty_cash` columns. Without that update, newer data may only survive in the current browser's local backup.
 
 `enableDemoData` should stay `false` for production. When false, the app will not auto-seed sample monthly entries after a database wipe.
 

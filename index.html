@@ -64,6 +64,9 @@
           <button class="nav-item centre-only" data-view="entry">
             <span>Daily Entry</span>
           </button>
+          <button class="nav-item centre-only" data-view="petty">
+            <span>Petty Cash</span>
+          </button>
           <button class="nav-item admin-only" data-view="targets">
             <span>Targets</span>
           </button>
@@ -446,53 +449,94 @@
             </div>
           </div>
 
-          <div class="dashboard-grid">
+          <div class="centre-detail-tabs">
+            <button class="centre-detail-tab active" type="button" data-centre-detail="operations">Operations</button>
+            <button class="centre-detail-tab" type="button" data-centre-detail="petty">Petty Cash</button>
+          </div>
+
+          <div class="centre-detail-pane active" id="centreOperationsDetail">
+            <div class="dashboard-grid">
+              <section class="panel">
+                <div class="panel-head"><h2>Daily Trend</h2></div>
+                <div class="trend-chart" id="trendChart"></div>
+              </section>
+              <section class="panel">
+                <div class="panel-head"><h2>Today Snapshot</h2></div>
+                <div class="snapshot-grid" id="snapshotGrid"></div>
+              </section>
+            </div>
+
             <section class="panel">
-              <div class="panel-head"><h2>Daily Trend</h2></div>
-              <div class="trend-chart" id="trendChart"></div>
-            </section>
-            <section class="panel">
-              <div class="panel-head"><h2>Today Snapshot</h2></div>
-              <div class="snapshot-grid" id="snapshotGrid"></div>
+              <div class="panel-head">
+                <div>
+                  <h2>Procedure Details</h2>
+                  <p>Till yesterday is calculated automatically from previous entries.</p>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table compact" id="centreProcedureTable">
+                  <thead>
+                    <tr class="group-row">
+                      <th rowspan="2">Procedure</th>
+                      <th colspan="3">General</th>
+                      <th colspan="3">KASP</th>
+                      <th colspan="3">MEDISEP</th>
+                      <th colspan="3">Total</th>
+                    </tr>
+                    <tr>
+                      <th>General Till Yesterday</th>
+                      <th>General Today</th>
+                      <th>General Total</th>
+                      <th>KASP Till Yesterday</th>
+                      <th>KASP Today</th>
+                      <th>KASP Total</th>
+                      <th>MEDISEP Till Yesterday</th>
+                      <th>MEDISEP Today</th>
+                      <th>MEDISEP Total</th>
+                      <th>Total Till Yesterday</th>
+                      <th>Total Today</th>
+                      <th>Grand Total</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
             </section>
           </div>
 
-          <section class="panel">
-            <div class="panel-head">
-              <div>
-                <h2>Procedure Details</h2>
-                <p>Till yesterday is calculated automatically from previous entries.</p>
+          <div class="centre-detail-pane" id="centrePettyDetail">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2 id="adminPettyCentreName">Petty Cash</h2>
+                  <p>Centre petty cash register, opening balance, payments, receipts, and closing balance.</p>
+                </div>
+                <div class="form-actions">
+                  <input id="adminPettyMonth" type="month" value="2026-04" aria-label="Petty cash month" />
+                  <button class="button primary" id="adminPettyDownloadBtn" type="button">Download Excel</button>
+                </div>
               </div>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table compact" id="centreProcedureTable">
-                <thead>
-                  <tr class="group-row">
-                    <th rowspan="2">Procedure</th>
-                    <th colspan="3">General</th>
-                    <th colspan="3">KASP</th>
-                    <th colspan="3">MEDISEP</th>
-                    <th colspan="3">Total</th>
-                  </tr>
-                  <tr>
-                    <th>General Till Yesterday</th>
-                    <th>General Today</th>
-                    <th>General Total</th>
-                    <th>KASP Till Yesterday</th>
-                    <th>KASP Today</th>
-                    <th>KASP Total</th>
-                    <th>MEDISEP Till Yesterday</th>
-                    <th>MEDISEP Today</th>
-                    <th>MEDISEP Total</th>
-                    <th>Total Till Yesterday</th>
-                    <th>Total Today</th>
-                    <th>Grand Total</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-          </section>
+              <div class="petty-summary-grid" id="adminPettySummary"></div>
+              <div class="table-wrap">
+                <table class="data-table petty-table" id="adminPettyRegisterTable">
+                  <thead>
+                    <tr>
+                      <th>SL No.</th>
+                      <th>Date</th>
+                      <th>Particulars</th>
+                      <th>Voucher No.</th>
+                      <th>Receipts</th>
+                      <th>Payments</th>
+                      <th>Balance</th>
+                      <th>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                  <tfoot></tfoot>
+                </table>
+              </div>
+            </section>
+          </div>
         </section>
 
         <section id="entryView" class="view">
@@ -564,6 +608,109 @@
                   </tr>
                 </thead>
                 <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="pettyView" class="view">
+          <div class="access-banner">
+            <strong id="pettyCentreName">Petty Cash</strong>
+            <span>Centre staff maintain the petty cash register for their own KH centre.</span>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Petty Cash Register</h2>
+                <p>Opening balance is manual. Receipts, payments, balance, and total expense follow the shared register format.</p>
+              </div>
+              <div class="form-actions">
+                <div class="locked-centre">
+                  <span>Centre</span>
+                  <strong id="pettyLockedCentreName">Tirur</strong>
+                </div>
+                <input id="pettyMonth" type="month" value="2026-04" aria-label="Petty cash month" />
+                <button class="button primary" id="pettyDownloadBtn" type="button">Download Excel</button>
+              </div>
+            </div>
+
+            <div class="petty-summary-grid" id="pettySummary"></div>
+
+            <div class="petty-balance-row">
+              <label>
+                <span>Opening Balance</span>
+                <input id="pettyOpeningBalance" type="number" step="0.01" min="0" value="0" />
+              </label>
+              <button class="button secondary" id="pettySaveBalanceBtn" type="button">Save Opening Balance</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="pettyFormTitle">Add Petty Entry</h2>
+                <p>Add one receipt or one payment per row, matching the Excel register.</p>
+              </div>
+              <div class="form-actions">
+                <button class="button secondary hidden" id="pettyCancelEditBtn" type="button">Cancel Edit</button>
+                <button class="button primary" id="pettySubmitBtn" type="button">Add Entry</button>
+              </div>
+            </div>
+            <input id="pettyEntryId" type="hidden" />
+            <datalist id="pettyParticularList" data-petty-particular-options></datalist>
+            <div class="petty-entry-grid">
+              <label>
+                <span>Date</span>
+                <input id="pettyDate" type="date" />
+              </label>
+              <label>
+                <span>Particulars</span>
+                <input id="pettyParticulars" type="text" list="pettyParticularList" placeholder="e.g. Other Payments" />
+              </label>
+              <label>
+                <span>Voucher No.</span>
+                <input id="pettyVoucherNo" type="text" placeholder="Voucher no." />
+              </label>
+              <label>
+                <span>Receipts</span>
+                <input id="pettyReceipts" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+              <label>
+                <span>Payments</span>
+                <input id="pettyPayments" type="number" step="0.01" min="0" placeholder="0.00" />
+              </label>
+              <label class="petty-remarks-field">
+                <span>Remarks</span>
+                <input id="pettyRemarks" type="text" placeholder="Remarks" />
+              </label>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Register Preview</h2>
+                <p>This table is what the Excel download will follow.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table petty-table" id="pettyRegisterTable">
+                <thead>
+                  <tr>
+                    <th>SL No.</th>
+                    <th>Date</th>
+                    <th>Particulars</th>
+                    <th>Voucher No.</th>
+                    <th>Receipts</th>
+                    <th>Payments</th>
+                    <th>Balance</th>
+                    <th>Remarks</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+                <tfoot></tfoot>
               </table>
             </div>
           </section>
