@@ -1137,12 +1137,17 @@ select:focus, input:focus {
 
 .petty-entry-grid {
   display: grid;
-  grid-template-columns: minmax(140px, .8fr) minmax(220px, 1.8fr) minmax(150px, 1fr) minmax(120px, .8fr) minmax(120px, .8fr) minmax(220px, 1.8fr);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 12px;
   align-items: end;
 }
 
-.petty-remarks-field input { min-width: 0; }
+.petty-entry-grid input { width: 100%; min-width: 0; }
+
+.petty-particulars-field,
+.petty-remarks-field {
+  grid-column: span 2;
+}
 
 .petty-entry-actions {
   display: flex;
@@ -1250,8 +1255,7 @@ select:focus, input:focus {
 }
 
 @media (max-width: 1280px) {
-  .petty-entry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .petty-remarks-field { grid-column: 1 / -1; }
+  .petty-entry-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
 }
 
 /* ─── Responsive — mobile (≤768px) ──────────────────────────────────────── */
@@ -1295,6 +1299,8 @@ select:focus, input:focus {
 
   .company-tabs { width: 100%; }
   .company-tab { flex: 1; min-width: 0; }
+  .petty-particulars-field,
+  .petty-remarks-field { grid-column: auto; }
 
   .panel-head .legend { margin-top: 4px; }
   .snapshot-grid { grid-template-columns: repeat(2, 1fr); }

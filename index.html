@@ -656,23 +656,23 @@
             <input id="pettyEntryId" type="hidden" />
             <datalist id="pettyParticularList" data-petty-particular-options></datalist>
             <div class="petty-entry-grid">
-              <label>
+              <label class="petty-date-field">
                 <span>Date</span>
                 <input id="pettyDate" type="date" />
               </label>
-              <label>
+              <label class="petty-particulars-field">
                 <span>Particulars</span>
                 <input id="pettyParticulars" type="text" list="pettyParticularList" placeholder="e.g. Other Payments" />
               </label>
-              <label>
+              <label class="petty-voucher-field">
                 <span>Voucher No.</span>
                 <input id="pettyVoucherNo" type="text" placeholder="Voucher no." />
               </label>
-              <label>
+              <label class="petty-money-field">
                 <span>Receipts</span>
                 <input id="pettyReceipts" type="number" step="0.01" min="0" placeholder="0.00" />
               </label>
-              <label>
+              <label class="petty-money-field">
                 <span>Payments</span>
                 <input id="pettyPayments" type="number" step="0.01" min="0" placeholder="0.00" />
               </label>
