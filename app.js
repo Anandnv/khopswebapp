@@ -42,9 +42,19 @@ let swiztonConsolidatedMapping = {
   vericoseAdvices: "vericoseAdvices",
   ufeDigitalProcedures: "ufeProcedureDone",
   vericoseDigitalProcedures: "vericoseProcedureDone",
-  ufeTotalProcedures: "ufeProcedureDone",
-  vericoseTotalProcedures: "vericoseProcedureDone"
+  ufeTotalProcedures: "",      // always manual — never auto-calculated
+  vericoseTotalProcedures: ""  // always manual — never auto-calculated
 };
+
+// These keys must always be manual (empty = no auto-source).
+// Call this after every state restore so saved mappings never override the intent.
+const SWIZTON_ALWAYS_MANUAL_KEYS = ["ufeTotalProcedures", "vericoseTotalProcedures"];
+
+function enforceMandatoryMappings() {
+  SWIZTON_ALWAYS_MANUAL_KEYS.forEach((key) => {
+    swiztonConsolidatedMapping[key] = "";
+  });
+}
 const STORAGE_KEY = "kh-cardio-ops-state-v1";
 const CONFIG = window.KH_CONFIG || {};
 let supabaseClient = null;
@@ -403,6 +413,10 @@ function applyAppState(state) {
   if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
   if (state.swiztonConsolidatedMapping && typeof state.swiztonConsolidatedMapping === "object") {
     swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...state.swiztonConsolidatedMapping };
+    // Total procedures are always manually entered — never auto-calculated.
+    // Force these keys to "" even if the saved state has old auto-mapped values.
+    swiztonConsolidatedMapping.ufeTotalProcedures = "";
+    swiztonConsolidatedMapping.vericoseTotalProcedures = "";
   }
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
@@ -464,6 +478,10 @@ async function loadFromSupabase() {
   if (Array.isArray(cfg.swizton_entries)) swiztonEntries = cfg.swizton_entries;
   if (cfg.swizton_mapping && typeof cfg.swizton_mapping === "object") {
     swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...cfg.swizton_mapping };
+    // Total procedures are always manually entered — never auto-calculated.
+    // Force these keys to "" even if the saved state has old auto-mapped values.
+    swiztonConsolidatedMapping.ufeTotalProcedures = "";
+    swiztonConsolidatedMapping.vericoseTotalProcedures = "";
   }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
@@ -576,6 +594,9 @@ function loadFromLocalStorage() {
     if (state.swiztonConsolidatedMapping && typeof state.swiztonConsolidatedMapping === "object") {
       swiztonConsolidatedMapping = { ...swiztonConsolidatedMapping, ...state.swiztonConsolidatedMapping };
     }
+      // Total procedures are always manually entered — force after any merge
+      swiztonConsolidatedMapping.ufeTotalProcedures = "";
+      swiztonConsolidatedMapping.vericoseTotalProcedures = "";
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
       Object.assign(entries, state.entries);
@@ -1287,7 +1308,15 @@ function swiztonMappedValue(entry, columnKey) {
 
 function swiztonConsolidatedRow(entry, index = 0) {
   const values = Object.fromEntries(
-    SWIZTON_CONSOLIDATED_COLUMNS.map((column) => [column.key, swiztonMappedValue(entry, column.key)])
+    SWIZTON_CONSOLIDATED_COLUMNS.map((column) => {
+      const sourceKey = swiztonConsolidatedMapping[column.key];
+      if (!sourceKey) {
+        // Manual column: read directly from the entry's manual field
+        const manualField = SWIZTON_MANUAL_FIELD_MAP[column.key] || column.key;
+        return [column.key, currencySafeNumber(entry[manualField])];
+      }
+      return [column.key, swiztonMappedValue(entry, column.key)];
+    })
   );
   return {
     slNo: index + 1,
@@ -1303,7 +1332,14 @@ function swiztonConsolidatedRow(entry, index = 0) {
 function swiztonTotals(rows = getSwiztonRows()) {
   return rows.reduce((totals, entry) => {
     SWIZTON_CONSOLIDATED_COLUMNS.forEach((column) => {
-      totals[column.key] += currencySafeNumber(swiztonMappedValue(entry, column.key));
+      const sourceKey = swiztonConsolidatedMapping[column.key];
+      if (!sourceKey) {
+        // Manual column: sum from the dedicated manual field on the entry object
+        const manualField = SWIZTON_MANUAL_FIELD_MAP[column.key] || column.key;
+        totals[column.key] += currencySafeNumber(entry[manualField]);
+      } else {
+        totals[column.key] += currencySafeNumber(swiztonMappedValue(entry, column.key));
+      }
     });
     return totals;
   }, Object.fromEntries(SWIZTON_CONSOLIDATED_COLUMNS.map((column) => [column.key, 0])));
@@ -1559,8 +1595,8 @@ function renderSwiztonDashboard() {
       <td>${totals.vericoseAdvices}</td>
       <td>${totals.ufeDigitalProcedures}</td>
       <td>${totals.vericoseDigitalProcedures}</td>
-      <td>${totals.ufeTotalProcedures}</td>
-      <td>${totals.vericoseTotalProcedures}</td>
+      <td data-tfoot-col="ufeTotalProcedures">${totals.ufeTotalProcedures}</td>
+      <td data-tfoot-col="vericoseTotalProcedures">${totals.vericoseTotalProcedures}</td>
       <td></td>
     </tr>
   `;
@@ -1588,10 +1624,19 @@ function renderSwiztonDashboard() {
       if (entryObj) {
         entryObj[field] = currencySafeNumber(input.value);
         persistSoon();
-        // Re-render totals footer only (avoid full re-render which would reset inputs)
+        // Update totals footer without a full re-render (which would reset inputs)
         const updatedTotals = swiztonTotals(getSwiztonRows());
-        tfoot.querySelector(`td:nth-child(10)`).textContent = updatedTotals.ufeTotalProcedures;
-        tfoot.querySelector(`td:nth-child(11)`).textContent = updatedTotals.vericoseTotalProcedures;
+        const ufeCell = tfoot.querySelector("[data-tfoot-col='ufeTotalProcedures']");
+        const vericoseCell = tfoot.querySelector("[data-tfoot-col='vericoseTotalProcedures']");
+        if (ufeCell) ufeCell.textContent = updatedTotals.ufeTotalProcedures;
+        if (vericoseCell) vericoseCell.textContent = updatedTotals.vericoseTotalProcedures;
+        // Also update summary card
+        setSummaryCards([
+          { label: "Total Leads", value: updatedTotals.ufeLeadsGenerated + updatedTotals.vericoseLeadsGenerated, note: "UFE and Vericose combined" },
+          { label: "OP Generated", value: updatedTotals.ufeOpGenerated + updatedTotals.vericoseOpGenerated, note: "Mapped from selected lead fields" },
+          { label: "Advices", value: updatedTotals.ufeAdvices + updatedTotals.vericoseAdvices, note: "UFE and Vericose advices" },
+          { label: "Procedure Done", value: updatedTotals.ufeTotalProcedures + updatedTotals.vericoseTotalProcedures, note: "Total UFE and Vericose procedures" }
+        ]);
       }
     });
   });
