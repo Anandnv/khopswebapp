@@ -646,15 +646,11 @@
             </div>
           </section>
 
-          <section class="panel">
+          <section class="panel petty-entry-panel">
             <div class="panel-head">
               <div>
                 <h2 id="pettyFormTitle">Add Petty Entry</h2>
                 <p>Add one receipt or one payment per row, matching the Excel register.</p>
-              </div>
-              <div class="form-actions">
-                <button class="button secondary hidden" id="pettyCancelEditBtn" type="button">Cancel Edit</button>
-                <button class="button primary" id="pettySubmitBtn" type="button">Add Entry</button>
               </div>
             </div>
             <input id="pettyEntryId" type="hidden" />
@@ -684,6 +680,10 @@
                 <span>Remarks</span>
                 <input id="pettyRemarks" type="text" placeholder="Remarks" />
               </label>
+            </div>
+            <div class="petty-entry-actions">
+              <button class="button secondary hidden" id="pettyCancelEditBtn" type="button">Cancel Edit</button>
+              <button class="button primary" id="pettySubmitBtn" type="button">Add Entry</button>
             </div>
           </section>
 
@@ -762,15 +762,11 @@
             <div class="panel-head">
               <div>
                 <h2>Centres & User Controls</h2>
-                <p>Admin can add/remove centres and update their login username and password.</p>
+                <p>Admin can add/remove KH centres and update their login username and password.</p>
               </div>
               <div class="form-actions">
                 <input id="newCentreName" type="text" placeholder="Centre name" />
-                <select id="newCentreCompany" aria-label="Select company for new centre">
-                  <option value="">Select company</option>
-                  <option value="KH">KH</option>
-                  <option value="Swizton">Swizton performance only</option>
-                </select>
+                <span class="company-pill">KH centres only</span>
                 <button class="button primary" id="addCentreBtn">Add Centre</button>
               </div>
             </div>

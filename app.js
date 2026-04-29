@@ -3318,20 +3318,14 @@ function addProcedure() {
 
 function addCenter() {
   const input = document.getElementById("newCentreName");
-  const companyInput = document.getElementById("newCentreCompany");
   const name = input.value.trim();
-  const company = companyInput?.value?.trim() || "";
-  if (!name || !company) {
-    showToast("Enter the centre name and choose whether it belongs to KH or Swizton");
-    return;
-  }
-  if (company === "Swizton") {
-    showToast("Swizton does not use centre login accounts. Add the centre name inside Swizton performance entry.");
+  if (!name) {
+    showToast("Enter the KH centre name");
     return;
   }
   centers.push({
     name,
-    company,
+    company: "KH",
     username: name.toLowerCase().replace(/\s+/g, ""),
     password: "1234",
     tillDate: 0,
@@ -3344,7 +3338,6 @@ function addCenter() {
     medisep: 0
   });
   input.value = "";
-  if (companyInput) companyInput.value = "";
   refreshCenterLists();
   renderTargets();
   renderUsers();
@@ -3578,9 +3571,6 @@ function setupAdminControls() {
   });
   document.getElementById("addCentreBtn").addEventListener("click", addCenter);
   document.getElementById("newCentreName").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") addCenter();
-  });
-  document.getElementById("newCentreCompany")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") addCenter();
   });
   document.getElementById("swiztonSaveBtn")?.addEventListener("click", saveSwiztonEntry);

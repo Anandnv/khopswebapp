@@ -299,6 +299,20 @@ p { color: var(--muted); margin-top: 5px; line-height: 1.55; font-size: .875rem;
 .form-actions,
 .report-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+.company-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f3f6fa;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .company-tabs {
   display: flex;
   gap: 10px;
@@ -1117,14 +1131,25 @@ select:focus, input:focus {
   letter-spacing: .04em;
 }
 
+.petty-entry-panel .panel-head {
+  margin-bottom: 12px;
+}
+
 .petty-entry-grid {
   display: grid;
-  grid-template-columns: 140px minmax(180px, 1.2fr) 140px 120px 120px minmax(220px, 1.4fr);
+  grid-template-columns: minmax(140px, .8fr) minmax(220px, 1.8fr) minmax(150px, 1fr) minmax(120px, .8fr) minmax(120px, .8fr) minmax(220px, 1.8fr);
   gap: 12px;
   align-items: end;
 }
 
 .petty-remarks-field input { min-width: 0; }
+
+.petty-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
 
 .petty-table { min-width: 980px; }
 
@@ -1220,9 +1245,13 @@ select:focus, input:focus {
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .report-preview-grid { grid-template-columns: 1fr; }
   .swizton-section-grid { grid-template-columns: 1fr; }
-  .petty-entry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .petty-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 1280px) {
+  .petty-entry-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .petty-remarks-field { grid-column: 1 / -1; }
 }
 
 /* ─── Responsive — mobile (≤768px) ──────────────────────────────────────── */
@@ -1288,6 +1317,8 @@ select:focus, input:focus {
   .topbar-actions { width: 100%; justify-content: flex-end; }
   .filter-grid { grid-template-columns: 1fr 1fr; }
   .petty-summary-grid { grid-template-columns: 1fr; }
+  .petty-entry-actions { justify-content: stretch; }
+  .petty-entry-actions .button { flex: 1; }
 }
 
 /* ─── Lock banners ───────────────────────────────────────────────────────── */
