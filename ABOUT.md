@@ -329,6 +329,11 @@ Tracks marketing funnel performance:
 * Improved authentication system
 
 ---
+## 🧑‍💻 Author
+
+Anand Nv
+Assistant Manager – Operations
+Karunya Hrudayalaya
 
 ## 🧠 Author Notes
 
