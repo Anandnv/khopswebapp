@@ -15,9 +15,10 @@ let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
 let loggedInAdminIndex = -1; // index into admins[] for regular admin; -1 = superadmin
 let loginType = "centre";
-let reportDate = new Date().toLocaleDateString('en-CA', {
-  timeZone: 'Asia/Kolkata'
-});
+let reportDate = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); })();
+
+
+
 let activeCentreDashboardIndex = 0;
 const entries = {};
 // entryMeta[centreIndex][date] = { savedAt: ISO string, savedBy: centreName }
@@ -464,9 +465,8 @@ function applyAppState(state) {
   if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
   if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
   if (Array.isArray(state.admins)) admins = state.admins;
-  // Always use today — never restore a stale saved date
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  setReportDate(today);
+  // Default to yesterday for report display — admin can change via picker
+  setReportDate(reportDate);
   return true;
 }
 
@@ -599,8 +599,8 @@ async function loadFromSupabase() {
     }));
   }
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  setReportDate(today);
+  // Default to yesterday for report display
+  setReportDate(reportDate);
   return true;
 }
 
@@ -2273,11 +2273,22 @@ function currencySafeNumber(value) {
 
 function setReportDate(date) {
   reportDate = date;
-  // Sync month selector only — never touch entryDate input
+  // Sync month selector
   const month = date.slice(0, 7);
   const monthSelect = document.getElementById("monthSelect");
   if (monthSelect && monthSelect.value !== month) {
     monthSelect.value = month;
+  }
+  // Sync report date picker in topbar
+  const rdInput = document.getElementById("reportDateInput");
+  if (rdInput && rdInput.value !== date) {
+    rdInput.value = date;
+  }
+  // Update topbar subtitle to reflect the active report date
+  const subtitle = document.getElementById("reportDateSubtitle");
+  if (subtitle) {
+    const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); })();
+    subtitle.textContent = date === yesterday ? `Showing: ${displayDate(date)} (yesterday)` : `Showing: ${displayDate(date)}`;
   }
 }
 
@@ -6269,6 +6280,23 @@ async function init() {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) entryDateInput.value = today;
+
+  // Set report date picker to yesterday (default) and wire change event
+  const reportDateInput = document.getElementById("reportDateInput");
+  if (reportDateInput) {
+    reportDateInput.value = reportDate; // already defaulted to yesterday at top of file
+    reportDateInput.max = today; // can't pick future dates
+    reportDateInput.addEventListener("change", () => {
+      const chosen = reportDateInput.value;
+      if (!chosen) return;
+      setReportDate(chosen);
+      refreshCenterRollups(reportDate);
+      renderConsolidated();
+      renderBars();
+      renderPayerSplit();
+      renderAdminReportPreview();
+    });
+  }
   const swiztonMonthInput = document.getElementById("swiztonMonth");
   if (swiztonMonthInput) swiztonMonthInput.value = today.slice(0, 7);
   const pettyMonthInput = document.getElementById("pettyMonth");
