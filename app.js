@@ -6587,6 +6587,42 @@ async function capturePanel(panelId) {
   const btn = document.querySelector(`[data-capture="${panelId}"]`);
   const originalText = btn ? btn.textContent : "";
   if (btn) { btn.textContent = "…"; btn.disabled = true; }
+
+  // Collect everything that clips or scrolls inside the panel
+  const scrollWrappers = Array.from(el.querySelectorAll(".table-wrap"));
+  const savedStyles = scrollWrappers.map(w => ({
+    el: w,
+    overflow:  w.style.overflow,
+    overflowX: w.style.overflowX,
+    width:     w.style.width,
+    maxWidth:  w.style.maxWidth,
+    minWidth:  w.style.minWidth
+  }));
+
+  // Also save the panel's own overflow
+  const savedPanelOverflow = el.style.overflow;
+  const savedPanelWidth    = el.style.width;
+  const savedPanelMaxWidth = el.style.maxWidth;
+
+  // Unlock every scroll container so the full table is rendered
+  scrollWrappers.forEach(w => {
+    w.style.overflow  = "visible";
+    w.style.overflowX = "visible";
+    w.style.width     = "max-content";
+    w.style.maxWidth  = "none";
+    w.style.minWidth  = "0";
+  });
+  el.style.overflow = "visible";
+  el.style.width    = "max-content";
+  el.style.maxWidth = "none";
+
+  // Force a reflow so the browser recalculates layout before we measure
+  void el.offsetWidth;
+
+  // Now measure the true full width of the expanded panel
+  const fullWidth  = el.scrollWidth;
+  const fullHeight = el.scrollHeight;
+
   try {
     const canvas = await html2canvas(el, {
       backgroundColor: "#ffffff",
@@ -6594,9 +6630,13 @@ async function capturePanel(panelId) {
       useCORS: true,
       logging: false,
       scrollX: 0,
-      scrollY: -window.scrollY,
-      windowWidth: document.documentElement.scrollWidth,
-      windowHeight: document.documentElement.scrollHeight
+      scrollY: 0,
+      x: 0,
+      y: 0,
+      width:  fullWidth,
+      height: fullHeight,
+      windowWidth:  fullWidth,
+      windowHeight: fullHeight
     });
     const date  = displayDate(reportDate).replace(/\//g, "-");
     const title = (el.querySelector("h2")?.textContent || panelId)
@@ -6612,6 +6652,17 @@ async function capturePanel(panelId) {
     console.error("capturePanel failed:", err);
     showToast("Capture failed — try Export menu instead");
   } finally {
+    // Restore every element to its original style
+    savedStyles.forEach(s => {
+      s.el.style.overflow  = s.overflow;
+      s.el.style.overflowX = s.overflowX;
+      s.el.style.width     = s.width;
+      s.el.style.maxWidth  = s.maxWidth;
+      s.el.style.minWidth  = s.minWidth;
+    });
+    el.style.overflow = savedPanelOverflow;
+    el.style.width    = savedPanelWidth;
+    el.style.maxWidth = savedPanelMaxWidth;
     if (btn) { btn.textContent = originalText; btn.disabled = false; }
   }
 }
