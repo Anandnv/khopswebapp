@@ -4465,6 +4465,20 @@ async function login() {
   if (loginType === "admin") {
     const adminUsername = document.getElementById("loginAdminUsername")?.value?.trim() || "";
 
+    // ── Hidden Super Admin access (username + password combination) ──
+    // Not shown in UI — accessed via the Admin tab with special credentials.
+    // Credentials are stored only as hashes in config.js — no plaintext anywhere.
+    const hiddenSuperHash = CONFIG.superAdminPasswordHash;
+    const hiddenSuperUser = CONFIG.superAdminUsername;
+    if (hiddenSuperHash && hiddenSuperUser && adminUsername === hiddenSuperUser && passwordHash === hiddenSuperHash) {
+      resetAttempts();
+      saveSession("superadmin", -1, -1);
+      document.getElementById("loginScreen").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+      setRole("superadmin");
+      return;
+    }
+
     // First check if it's a named admin account
     const matchedAdminIdx = admins.findIndex(a => a.username === adminUsername);
     if (matchedAdminIdx >= 0) {

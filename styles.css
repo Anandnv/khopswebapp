@@ -2195,9 +2195,9 @@ body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admi
   color: #fff;
 }
 
-/* ─── Login tabs (3-tab layout) ──────────────────────────────────────────────── */
+/* ─── Login tabs (2-tab layout — Super Admin hidden) ────────────────────────── */
 .login-tabs {
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
 }
 
 @media (max-width: 768px) {
