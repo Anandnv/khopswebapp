@@ -15,10 +15,12 @@ let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
 let loggedInAdminIndex = -1; // index into admins[] for regular admin; -1 = superadmin
 let loginType = "centre";
-let reportDate = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); })();
-
-
-
+// Default report date = yesterday IST (morning reports cover the previous day)
+let reportDate = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+})();
 let activeCentreDashboardIndex = 0;
 const entries = {};
 // entryMeta[centreIndex][date] = { savedAt: ISO string, savedBy: centreName }
@@ -465,7 +467,7 @@ function applyAppState(state) {
   if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
   if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
   if (Array.isArray(state.admins)) admins = state.admins;
-  // Default to yesterday for report display — admin can change via picker
+  // Default to yesterday — morning reports show previous day's data
   setReportDate(reportDate);
   return true;
 }
@@ -599,7 +601,7 @@ async function loadFromSupabase() {
     }));
   }
 
-  // Default to yesterday for report display
+  // Default to yesterday — morning reports show previous day's data
   setReportDate(reportDate);
   return true;
 }
@@ -2279,16 +2281,20 @@ function setReportDate(date) {
   if (monthSelect && monthSelect.value !== month) {
     monthSelect.value = month;
   }
-  // Sync report date picker in topbar
+  // Sync the report date picker in topbar
   const rdInput = document.getElementById("reportDateInput");
-  if (rdInput && rdInput.value !== date) {
-    rdInput.value = date;
-  }
-  // Update topbar subtitle to reflect the active report date
+  if (rdInput && rdInput.value !== date) rdInput.value = date;
+  // Update subtitle beneath page title
   const subtitle = document.getElementById("reportDateSubtitle");
   if (subtitle) {
-    const yesterday = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); })();
-    subtitle.textContent = date === yesterday ? `Showing: ${displayDate(date)} (yesterday)` : `Showing: ${displayDate(date)}`;
+    const yesterday = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    })();
+    subtitle.textContent = date === yesterday
+      ? `Showing: ${displayDate(date)} (yesterday)`
+      : `Showing: ${displayDate(date)}`;
   }
 }
 
@@ -6281,11 +6287,11 @@ async function init() {
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) entryDateInput.value = today;
 
-  // Set report date picker to yesterday (default) and wire change event
+  // Wire the report date picker — pre-filled to yesterday, capped at today
   const reportDateInput = document.getElementById("reportDateInput");
   if (reportDateInput) {
-    reportDateInput.value = reportDate; // already defaulted to yesterday at top of file
-    reportDateInput.max = today; // can't pick future dates
+    reportDateInput.value = reportDate;
+    reportDateInput.max = today;
     reportDateInput.addEventListener("change", () => {
       const chosen = reportDateInput.value;
       if (!chosen) return;
@@ -6323,6 +6329,7 @@ async function init() {
   renderUnlockRequests();
   renderAuditLog();
   setupAuditFilters();
+  setupCaptureButtons();
   document.getElementById("saveBtn").addEventListener("click", updateFromDailyEntry);
 
   // Restore session if the tab is still open (sessionStorage survives refresh)
@@ -6569,6 +6576,53 @@ function logTargetChange(centreName, oldTarget, newTarget) {
     `Changed target for "${centreName}" from ${oldTarget} → ${newTarget}`,
     [centers.findIndex(c => c.name === centreName)]
   );
+}
+
+
+// ─── PNG Panel Capture ───────────────────────────────────────────────────────
+
+async function capturePanel(panelId) {
+  const el = document.getElementById(panelId);
+  if (!el) { showToast("Panel not found"); return; }
+  const btn = document.querySelector(`[data-capture="${panelId}"]`);
+  const originalText = btn ? btn.textContent : "";
+  if (btn) { btn.textContent = "…"; btn.disabled = true; }
+  try {
+    const canvas = await html2canvas(el, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY,
+      windowWidth: document.documentElement.scrollWidth,
+      windowHeight: document.documentElement.scrollHeight
+    });
+    const date  = displayDate(reportDate).replace(/\//g, "-");
+    const title = (el.querySelector("h2")?.textContent || panelId)
+                    .trim().replace(/[^a-zA-Z0-9 ]/g, "").replace(/\s+/g, "-").toLowerCase();
+    const link  = document.createElement("a");
+    link.href     = canvas.toDataURL("image/png", 0.95);
+    link.download = `kh-${title}-${date}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    showToast("PNG downloaded");
+  } catch (err) {
+    console.error("capturePanel failed:", err);
+    showToast("Capture failed — try Export menu instead");
+  } finally {
+    if (btn) { btn.textContent = originalText; btn.disabled = false; }
+  }
+}
+
+function setupCaptureButtons() {
+  document.querySelectorAll(".btn-capture").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      capturePanel(btn.dataset.capture);
+    });
+  });
 }
 
 init();

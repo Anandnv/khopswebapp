@@ -2222,3 +2222,99 @@ body.superadmin-mode .admin-only { display: flex; } /* super admin sees all admi
     overflow-y: auto;
   }
 }
+
+/* ─── Report Date Picker (topbar) ────────────────────────────────────────── */
+.report-date-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  position: relative;
+}
+
+/* Hide the label — show date inline like the month select */
+.report-date-label {
+  display: none;
+}
+
+/* Make the date input look exactly like the month <select> next to it */
+#reportDateInput {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+  /* Teal left accent to distinguish it from the month selector */
+  border-left: 3px solid var(--teal);
+  min-width: 150px;
+}
+
+#reportDateInput:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(47, 111, 102, 0.14);
+}
+
+#reportDateInput::-webkit-calendar-picker-indicator {
+  opacity: 0.5;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+#reportDateInput:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
+
+/* Subtitle under page title */
+.report-date-subtitle {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--teal);
+  font-weight: 600;
+  margin-top: 2px;
+  letter-spacing: .01em;
+}
+
+/* PNG Capture Button */
+.btn-capture {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1.5px solid var(--line-strong);
+  background: #f7fafd;
+  color: #3a4f66;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+  flex-shrink: 0;
+}
+
+.btn-capture:hover {
+  background: #e8f0f9;
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: 0 2px 8px rgba(31,79,130,.10);
+}
+
+.btn-capture:active { transform: scale(.97); }
+
+.btn-capture:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  #reportDateInput { min-width: 0; width: 100%; }
+}

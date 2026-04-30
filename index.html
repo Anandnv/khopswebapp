@@ -348,16 +348,19 @@
             </div>
           </section>
 
-          <section class="panel kh-company-section">
+          <section class="panel kh-company-section" id="procedurePanel">
             <div class="panel-head">
               <div>
                 <h2 id="procedureReportTitle">KH - Procedures Till 20-04-2026</h2>
                 <p>Click any centre to open detailed analytics.</p>
               </div>
-              <div class="legend">
-                <span><i class="good"></i>80% to 100%</span>
-                <span><i class="watch"></i>40% to 79%</span>
-                <span><i class="risk"></i>Less than 40%</span>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div class="legend">
+                  <span><i class="good"></i>80% to 100%</span>
+                  <span><i class="watch"></i>40% to 79%</span>
+                  <span><i class="risk"></i>Less than 40%</span>
+                </div>
+                <button class="btn-capture admin-only" data-capture="procedurePanel" title="Download as PNG">⬇ PNG</button>
               </div>
             </div>
             <div class="table-wrap">
@@ -383,12 +386,13 @@
             </div>
           </section>
 
-          <section class="panel kh-company-section">
+          <section class="panel kh-company-section" id="opsPanel">
             <div class="panel-head">
               <div>
                 <h2 id="opsReportTitle">OP & Diagnostics Till 20-04-2026</h2>
                 <p>These values also update from each centre's daily entry.</p>
               </div>
+              <button class="btn-capture admin-only" data-capture="opsPanel" title="Download as PNG">⬇ PNG</button>
             </div>
             <div class="table-wrap">
               <table class="data-table compact" id="opsConsolidatedTable">
@@ -421,15 +425,17 @@
           </section>
 
           <div class="dashboard-grid kh-company-section">
-            <section class="panel">
+            <section class="panel" id="achievementPanel">
               <div class="panel-head">
                 <h2>Centre Achievement</h2>
+                <button class="btn-capture admin-only" data-capture="achievementPanel" title="Download as PNG">⬇ PNG</button>
               </div>
               <div class="bar-list" id="achievementBars"></div>
             </section>
-            <section class="panel">
+            <section class="panel" id="caseClassPanel">
               <div class="panel-head">
                 <h2>Case Classification</h2>
+                <button class="btn-capture admin-only" data-capture="caseClassPanel" title="Download as PNG">⬇ PNG</button>
               </div>
               <div class="donut-row">
                 <div class="donut" id="payerDonut"></div>
@@ -1010,6 +1016,7 @@
 
     
     <div class="toast" id="toast"></div>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
