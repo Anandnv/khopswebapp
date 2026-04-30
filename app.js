@@ -38,6 +38,8 @@ let swiztonEntries = [];
 let swiztonEditingId = null;
 let pettyCash = { balances: {}, entries: {} };
 let pettyEditingId = null;
+let procedureAdvice = {};
+let procedureAdviceEditingId = null;
 let activeCentreDetailTab = "operations";
 const PETTY_PARTICULAR_OPTIONS = [
   "By Cash",
@@ -65,6 +67,16 @@ const PETTY_PARTICULAR_OPTIONS = [
   "Repairs and Maintanance Exp.",
   "Other Payments",
   "Other Receipts"
+];
+const PROCEDURE_ADVICE_TYPE_OPTIONS = ["CASH", "KASP", "MEDISEP", "GENERAL"];
+const PROCEDURE_ADVICE_PROCEDURE_OPTIONS = ["CAG", "PTCA", "POBA", "CABG", "TPI", "PPI", "MEDICATION", "OTHER"];
+const PROCEDURE_ADVICE_STATUS_OPTIONS = [
+  "Done here",
+  "Done elsewhere",
+  "Not done",
+  "Second opinion",
+  "Medication only",
+  "Follow-up pending"
 ];
 let swiztonConsolidatedMapping = {
   ufeLeadsGenerated: "ufeLeadsGenerated",
@@ -430,6 +442,7 @@ function getAppState() {
     swiztonEntries,
     swiztonConsolidatedMapping,
     pettyCash,
+    procedureAdvice,
     entries,
     entryMeta,
     unlockRequests,
@@ -454,6 +467,9 @@ function applyAppState(state) {
   }
   if (state.pettyCash && typeof state.pettyCash === "object") {
     pettyCash = normalizePettyCash(state.pettyCash);
+  }
+  if (state.procedureAdvice && typeof state.procedureAdvice === "object") {
+    procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
   }
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
@@ -521,6 +537,9 @@ async function loadFromSupabase() {
   }
   if (cfg.petty_cash && typeof cfg.petty_cash === "object") {
     pettyCash = normalizePettyCash(cfg.petty_cash);
+  }
+  if (cfg.procedure_advice && typeof cfg.procedure_advice === "object") {
+    procedureAdvice = normalizeProcedureAdviceStore(cfg.procedure_advice);
   }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
@@ -625,6 +644,13 @@ function mergeLocalSupplementalState() {
     ) {
       pettyCash = normalizePettyCash(state.pettyCash);
     }
+    if (
+      state.procedureAdvice &&
+      typeof state.procedureAdvice === "object" &&
+      !Object.keys(procedureAdvice || {}).length
+    ) {
+      procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
+    }
   } catch (err) {
     console.warn("Could not merge local supplemental state:", err);
   }
@@ -646,6 +672,9 @@ function loadFromLocalStorage() {
       swiztonConsolidatedMapping.vericoseTotalProcedures = "";
     if (state.pettyCash && typeof state.pettyCash === "object") {
       pettyCash = normalizePettyCash(state.pettyCash);
+    }
+    if (state.procedureAdvice && typeof state.procedureAdvice === "object") {
+      procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
     }
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
@@ -732,6 +761,7 @@ async function saveConfig() {
     swizton_entries: swiztonEntries,
     swizton_mapping: swiztonConsolidatedMapping,
     petty_cash: pettyCash,
+    procedure_advice: procedureAdvice,
     admins,
     admin_audit_log: adminAuditLog,
     updated_at: new Date().toISOString()
@@ -742,7 +772,7 @@ async function saveConfig() {
     .upsert(payload);
 
   // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash/i.test(error.message || "")) {
+  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice/i.test(error.message || "")) {
     const fallbackPayload = { ...payload };
     if (/admins|admin_audit_log/i.test(error.message || "")) {
       delete fallbackPayload.admins;
@@ -756,6 +786,9 @@ async function saveConfig() {
     }
     if (/petty_cash/i.test(error.message || "")) {
       delete fallbackPayload.petty_cash;
+    }
+    if (/procedure_advice/i.test(error.message || "")) {
+      delete fallbackPayload.procedure_advice;
     }
     ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
@@ -943,6 +976,10 @@ function ensureBootstrapData() {
   if (hadUntaggedProcedures) changed = true;
   if (!Array.isArray(swiztonEntries)) {
     swiztonEntries = [];
+    changed = true;
+  }
+  if (!procedureAdvice || typeof procedureAdvice !== "object") {
+    procedureAdvice = {};
     changed = true;
   }
   return changed;
@@ -1223,11 +1260,38 @@ function normalizePettyCash(value = {}) {
   };
 }
 
+function normalizeProcedureAdviceStore(value = {}) {
+  const normalized = {};
+  Object.keys(value || {}).forEach((key) => {
+    normalized[key] = Array.isArray(value[key]) ? value[key] : [];
+  });
+  return normalized;
+}
+
 function ensurePettyCentre(centreIndex) {
   pettyCash = normalizePettyCash(pettyCash);
   if (!pettyCash.balances[centreIndex]) pettyCash.balances[centreIndex] = {};
   if (!Array.isArray(pettyCash.entries[centreIndex])) pettyCash.entries[centreIndex] = [];
   return pettyCash.entries[centreIndex];
+}
+
+function ensureAdviceCentre(centreIndex) {
+  procedureAdvice = normalizeProcedureAdviceStore(procedureAdvice);
+  if (!Array.isArray(procedureAdvice[centreIndex])) procedureAdvice[centreIndex] = [];
+  return procedureAdvice[centreIndex];
+}
+
+function selectedAdviceMonth() {
+  return document.getElementById("adviceMonthFilter")?.value || todayIST().slice(0, 7);
+}
+
+function selectedAdviceStatus() {
+  return document.getElementById("adviceStatusFilter")?.value || "all";
+}
+
+function selectedAdviceCentreFilter() {
+  if (currentRole === "centre") return String(loggedInCentreIndex);
+  return document.getElementById("adviceCentreFilter")?.value || "all";
 }
 
 function selectedPettyMonth() {
@@ -1557,6 +1621,358 @@ function setupPettyControls() {
   });
 }
 
+function adviceDoctorOptions() {
+  const configured = Array.from(new Set(
+    Object.values(procedureAdvice || {})
+      .flat()
+      .map((entry) => normalizeWhitespace(entry.doctor))
+      .filter(Boolean)
+  ));
+  return configured.sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeWhitespace(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function adviceStatusKey(entry) {
+  const status = normalizeWhitespace(entry.status).toUpperCase();
+  const advised = normalizeWhitespace(entry.advised).toUpperCase();
+  if (status.includes("OTHER HOSPITAL") || status.includes("DONE ELSEWHERE")) return "done_elsewhere";
+  if (status.includes("NOT DONE")) return "not_done";
+  if (status.includes("2ND OPINION") || status.includes("SECOND OPINION")) return "second_opinion";
+  if (status.includes("ONLY MEDICATION") || advised === "MEDICATION") return "medication_only";
+  if (entry.procedureDate || status.includes("DONE HERE") || status.endsWith("DONE") || status === "DONE") return "done_here";
+  return "pending";
+}
+
+function adviceStatusLabel(key) {
+  return ({
+    done_here: "Done here",
+    done_elsewhere: "Done elsewhere",
+    not_done: "Not done",
+    second_opinion: "Second opinion",
+    medication_only: "Medication only",
+    pending: "Follow-up pending"
+  })[key] || "Follow-up pending";
+}
+
+function adviceProcedureKey(entry) {
+  const advised = normalizeWhitespace(entry.advised).toUpperCase();
+  if (advised.includes("PTCA")) return "PTCA";
+  if (advised.includes("POBA")) return "POBA";
+  if (advised.includes("CAG")) return "CAG";
+  if (advised.includes("MEDICATION")) return "MEDICATION";
+  return advised || "OTHER";
+}
+
+function filteredProcedureAdviceRows() {
+  const month = selectedAdviceMonth();
+  const status = selectedAdviceStatus();
+  const centreFilter = selectedAdviceCentreFilter();
+  const centreIndexes = currentRole === "centre"
+    ? [loggedInCentreIndex]
+    : (centreFilter === "all"
+        ? getAssignedCentreIndexes().filter((index) => centerMatchesActiveCompany(centers[index]))
+        : [Number(centreFilter)].filter((index) => getAssignedCentreIndexes().includes(index)));
+
+  return centreIndexes.flatMap((centreIndex) =>
+    ensureAdviceCentre(centreIndex)
+      .filter((entry) => {
+        const entryMonth = (entry.date || "").slice(0, 7);
+        if (month && entryMonth !== month) return false;
+        if (status !== "all" && adviceStatusKey(entry) !== status) return false;
+        return true;
+      })
+      .map((entry) => ({ ...entry, centreIndex, centreName: centers[centreIndex]?.name || "" }))
+  ).sort((a, b) =>
+    (a.date || "").localeCompare(b.date || "") ||
+    a.centreName.localeCompare(b.centreName) ||
+    normalizeWhitespace(a.patientName).localeCompare(normalizeWhitespace(b.patientName)) ||
+    String(a.id).localeCompare(String(b.id))
+  );
+}
+
+function adviceMetrics(rows) {
+  const procedureCounts = {};
+  const outcomeCounts = {
+    done_here: 0,
+    done_elsewhere: 0,
+    not_done: 0,
+    second_opinion: 0,
+    medication_only: 0,
+    pending: 0
+  };
+
+  rows.forEach((entry) => {
+    const procedureKey = adviceProcedureKey(entry);
+    const statusKey = adviceStatusKey(entry);
+    procedureCounts[procedureKey] = (procedureCounts[procedureKey] || 0) + 1;
+    outcomeCounts[statusKey] += 1;
+  });
+
+  return {
+    total: rows.length,
+    completed: outcomeCounts.done_here + outcomeCounts.done_elsewhere,
+    doneHere: outcomeCounts.done_here,
+    doneElsewhere: outcomeCounts.done_elsewhere,
+    notDone: outcomeCounts.not_done,
+    followUp: outcomeCounts.pending + outcomeCounts.second_opinion,
+    procedureCounts,
+    outcomeCounts
+  };
+}
+
+function renderProcedureAdviceOptions() {
+  const fill = (id, options) => {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.innerHTML = options.map((option) => `<option value="${escapeHtml(option)}"></option>`).join("");
+  };
+  fill("adviceDoctorList", adviceDoctorOptions());
+  fill("adviceProcedureList", PROCEDURE_ADVICE_PROCEDURE_OPTIONS);
+  fill("adviceStatusList", PROCEDURE_ADVICE_STATUS_OPTIONS);
+  fill("adviceTypeList", PROCEDURE_ADVICE_TYPE_OPTIONS);
+}
+
+function renderProcedureAdviceSummary(rows) {
+  const container = document.getElementById("adviceSummaryGrid");
+  if (!container) return;
+  const metrics = adviceMetrics(rows);
+  const procedureCounts = metrics.procedureCounts;
+  container.innerHTML = [
+    { label: "Total Advice Cases", value: metrics.total, note: "All rows in the selected month" },
+    { label: "Completed", value: metrics.completed, note: "Done here or elsewhere" },
+    { label: "CAG Advised", value: procedureCounts.CAG || 0, note: "Rows marked as CAG" },
+    { label: "PTCA Advised", value: procedureCounts.PTCA || 0, note: "Rows marked as PTCA" },
+    { label: "POBA Advised", value: procedureCounts.POBA || 0, note: "Rows marked as POBA" },
+    { label: "Not Done", value: metrics.notDone, note: "Explicitly marked not done" },
+    { label: "Done Here", value: metrics.doneHere, note: "Completed in this centre" },
+    { label: "Done Elsewhere", value: metrics.doneElsewhere, note: "Completed in another hospital" }
+  ].map((card) => `
+    <div>
+      <span>${card.label}</span>
+      <strong>${card.value}</strong>
+      <small>${card.note}</small>
+    </div>
+  `).join("");
+}
+
+function renderProcedureAdviceBreakdowns(rows) {
+  const metrics = adviceMetrics(rows);
+  const typeBody = document.querySelector("#adviceTypeTable tbody");
+  const outcomeBody = document.querySelector("#adviceOutcomeTable tbody");
+  if (typeBody) {
+    const items = Object.entries(metrics.procedureCounts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    typeBody.innerHTML = items.length
+      ? items.map(([label, count]) => `<tr><td>${escapeHtml(label)}</td><td>${count}</td></tr>`).join("")
+      : `<tr><td colspan="2">No advice rows for this filter.</td></tr>`;
+  }
+  if (outcomeBody) {
+    const items = Object.entries(metrics.outcomeCounts)
+      .map(([key, count]) => [adviceStatusLabel(key), count]);
+    outcomeBody.innerHTML = items
+      .map(([label, count]) => `<tr><td>${escapeHtml(label)}</td><td>${count}</td></tr>`)
+      .join("");
+  }
+}
+
+function renderProcedureAdviceTable(rows) {
+  const tbody = document.querySelector("#adviceTable tbody");
+  if (!tbody) return;
+  const editable = currentRole === "centre";
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="${editable ? 19 : 18}" style="color:var(--muted)">No advice rows for this filter.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows.map((entry, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${entry.date ? displayDate(entry.date) : ""}</td>
+      <td>${escapeHtml(entry.patientName || "")}${currentRole !== "centre" ? `<small style="display:block;color:var(--muted)">${escapeHtml(entry.centreName || "")}</small>` : ""}</td>
+      <td>${escapeHtml(entry.mobile1 || "")}</td>
+      <td>${escapeHtml(entry.mobile2 || "")}</td>
+      <td>${escapeHtml(entry.doctor || "")}</td>
+      <td>${escapeHtml(entry.patientType || "")}</td>
+      <td>${escapeHtml(entry.advised || "")}</td>
+      <td>${entry.proposedDate ? displayDate(entry.proposedDate) : ""}</td>
+      <td>${entry.call1Date ? displayDate(entry.call1Date) : ""}</td>
+      <td>${escapeHtml(entry.call1By || "")}</td>
+      <td>${escapeHtml(entry.call1Reply || "")}</td>
+      <td>${entry.call2Date ? displayDate(entry.call2Date) : ""}</td>
+      <td>${escapeHtml(entry.call2By || "")}</td>
+      <td>${escapeHtml(entry.call2Reply || "")}</td>
+      <td>${entry.procedureDate ? displayDate(entry.procedureDate) : ""}</td>
+      <td><span class="advice-outcome ${adviceStatusKey(entry)}">${escapeHtml(adviceStatusLabel(adviceStatusKey(entry)))}</span></td>
+      <td>${escapeHtml(entry.remarks || "")}</td>
+      ${editable ? `<td class="petty-actions-cell"><button class="text-button" type="button" data-advice-edit="${entry.id}">Edit</button><button class="text-button danger" type="button" data-advice-delete="${entry.id}">Delete</button></td>` : ""}
+    </tr>
+  `).join("");
+
+  if (editable) {
+    tbody.querySelectorAll("[data-advice-edit]").forEach((button) => {
+      button.addEventListener("click", () => editProcedureAdviceEntry(button.dataset.adviceEdit));
+    });
+    tbody.querySelectorAll("[data-advice-delete]").forEach((button) => {
+      button.addEventListener("click", () => deleteProcedureAdviceEntry(button.dataset.adviceDelete));
+    });
+  }
+}
+
+function resetProcedureAdviceForm(resetDate = false) {
+  procedureAdviceEditingId = null;
+  document.getElementById("adviceEntryId").value = "";
+  document.getElementById("adviceFormTitle").textContent = "Add Advice Entry";
+  document.getElementById("adviceSubmitBtn").textContent = "Add Entry";
+  document.getElementById("adviceCancelEditBtn").classList.add("hidden");
+  if (resetDate) document.getElementById("adviceDate").value = todayIST();
+  [
+    "advicePatientName", "adviceMobile1", "adviceMobile2", "adviceDoctor", "adviceCaseType",
+    "adviceProcedure", "adviceProposedDate", "adviceCall1Date", "adviceCall1By", "adviceCall1Reply",
+    "adviceCall2Date", "adviceCall2By", "adviceCall2Reply", "adviceProcedureDate", "adviceStatus", "adviceRemarks"
+  ].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = "";
+  });
+}
+
+function renderProcedureAdviceView() {
+  const monthInput = document.getElementById("adviceMonthFilter");
+  if (monthInput && !monthInput.value) monthInput.value = todayIST().slice(0, 7);
+
+  const centreFilter = document.getElementById("adviceCentreFilter");
+  if (centreFilter && currentRole !== "centre") {
+    const current = centreFilter.value || "all";
+    const centres = getAssignedCentreIndexes().filter((index) => centerMatchesActiveCompany(centers[index]));
+    centreFilter.innerHTML = `<option value="all">All Centres</option>` +
+      centres.map((index) => `<option value="${index}">${escapeHtml(centers[index].name)}</option>`).join("");
+    centreFilter.value = centres.some((index) => String(index) === current) || current === "all" ? current : "all";
+  }
+
+  if (currentRole === "centre") {
+    const centre = centers[loggedInCentreIndex];
+    document.getElementById("adviceViewTitle").textContent = `${centre.name} Procedure Advice`;
+    document.getElementById("adviceViewSubtitle").textContent = "Track advised procedures, follow-up calls, and final outcome for your own centre.";
+    document.getElementById("adviceLockedCentreName").textContent = centre.name;
+    if (!document.getElementById("adviceDate").value) document.getElementById("adviceDate").value = todayIST();
+  } else {
+    document.getElementById("adviceViewTitle").textContent = "Procedure Advice";
+    document.getElementById("adviceViewSubtitle").textContent = "Month-wise consolidated advice tracker across assigned centres.";
+  }
+
+  renderProcedureAdviceOptions();
+  const rows = filteredProcedureAdviceRows();
+  renderProcedureAdviceSummary(rows);
+  renderProcedureAdviceBreakdowns(rows);
+  renderProcedureAdviceTable(rows);
+  document.getElementById("adviceTableTitle").textContent = currentRole === "centre" ? "Your Advice Register" : "Consolidated Advice Register";
+}
+
+function saveProcedureAdviceEntry() {
+  if (currentRole !== "centre") {
+    showToast("Only centre users can add advice rows.");
+    return;
+  }
+  const date = document.getElementById("adviceDate").value;
+  const patientName = normalizeWhitespace(document.getElementById("advicePatientName").value);
+  const advised = normalizeWhitespace(document.getElementById("adviceProcedure").value);
+  if (!date || !patientName || !advised) {
+    showToast("Enter date, patient name, and advised procedure.");
+    return;
+  }
+
+  const entriesForCentre = ensureAdviceCentre(loggedInCentreIndex);
+  const payload = {
+    date,
+    patientName,
+    mobile1: normalizeWhitespace(document.getElementById("adviceMobile1").value),
+    mobile2: normalizeWhitespace(document.getElementById("adviceMobile2").value),
+    doctor: normalizeWhitespace(document.getElementById("adviceDoctor").value),
+    patientType: normalizeWhitespace(document.getElementById("adviceCaseType").value),
+    advised,
+    proposedDate: document.getElementById("adviceProposedDate").value || "",
+    call1Date: document.getElementById("adviceCall1Date").value || "",
+    call1By: normalizeWhitespace(document.getElementById("adviceCall1By").value),
+    call1Reply: normalizeWhitespace(document.getElementById("adviceCall1Reply").value),
+    call2Date: document.getElementById("adviceCall2Date").value || "",
+    call2By: normalizeWhitespace(document.getElementById("adviceCall2By").value),
+    call2Reply: normalizeWhitespace(document.getElementById("adviceCall2Reply").value),
+    procedureDate: document.getElementById("adviceProcedureDate").value || "",
+    status: normalizeWhitespace(document.getElementById("adviceStatus").value),
+    remarks: normalizeWhitespace(document.getElementById("adviceRemarks").value),
+    updatedAt: new Date().toISOString(),
+    updatedBy: centers[loggedInCentreIndex]?.name || "Centre"
+  };
+
+  if (procedureAdviceEditingId) {
+    const existing = entriesForCentre.find((entry) => String(entry.id) === String(procedureAdviceEditingId));
+    if (existing) Object.assign(existing, payload);
+  } else {
+    entriesForCentre.push({
+      id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString(),
+      ...payload
+    });
+  }
+
+  const monthInput = document.getElementById("adviceMonthFilter");
+  if (monthInput) monthInput.value = date.slice(0, 7);
+  persistSoon();
+  resetProcedureAdviceForm(false);
+  renderProcedureAdviceView();
+  showToast("Procedure advice saved");
+}
+
+function editProcedureAdviceEntry(entryId) {
+  const entry = ensureAdviceCentre(loggedInCentreIndex).find((item) => String(item.id) === String(entryId));
+  if (!entry) return;
+  procedureAdviceEditingId = entry.id;
+  document.getElementById("adviceEntryId").value = entry.id;
+  document.getElementById("adviceFormTitle").textContent = "Edit Advice Entry";
+  document.getElementById("adviceSubmitBtn").textContent = "Update Entry";
+  document.getElementById("adviceCancelEditBtn").classList.remove("hidden");
+  document.getElementById("adviceDate").value = entry.date || todayIST();
+  document.getElementById("advicePatientName").value = entry.patientName || "";
+  document.getElementById("adviceMobile1").value = entry.mobile1 || "";
+  document.getElementById("adviceMobile2").value = entry.mobile2 || "";
+  document.getElementById("adviceDoctor").value = entry.doctor || "";
+  document.getElementById("adviceCaseType").value = entry.patientType || "";
+  document.getElementById("adviceProcedure").value = entry.advised || "";
+  document.getElementById("adviceProposedDate").value = entry.proposedDate || "";
+  document.getElementById("adviceCall1Date").value = entry.call1Date || "";
+  document.getElementById("adviceCall1By").value = entry.call1By || "";
+  document.getElementById("adviceCall1Reply").value = entry.call1Reply || "";
+  document.getElementById("adviceCall2Date").value = entry.call2Date || "";
+  document.getElementById("adviceCall2By").value = entry.call2By || "";
+  document.getElementById("adviceCall2Reply").value = entry.call2Reply || "";
+  document.getElementById("adviceProcedureDate").value = entry.procedureDate || "";
+  document.getElementById("adviceStatus").value = entry.status || "";
+  document.getElementById("adviceRemarks").value = entry.remarks || "";
+}
+
+function deleteProcedureAdviceEntry(entryId) {
+  if (!window.confirm("Delete this procedure advice row?")) return;
+  procedureAdvice[loggedInCentreIndex] = ensureAdviceCentre(loggedInCentreIndex)
+    .filter((entry) => String(entry.id) !== String(entryId));
+  if (String(procedureAdviceEditingId) === String(entryId)) resetProcedureAdviceForm(false);
+  persistSoon();
+  renderProcedureAdviceView();
+  showToast("Procedure advice deleted");
+}
+
+function setupProcedureAdviceControls() {
+  document.getElementById("adviceMonthFilter")?.addEventListener("change", renderProcedureAdviceView);
+  document.getElementById("adviceStatusFilter")?.addEventListener("change", renderProcedureAdviceView);
+  document.getElementById("adviceCentreFilter")?.addEventListener("change", renderProcedureAdviceView);
+  document.getElementById("adviceSubmitBtn")?.addEventListener("click", saveProcedureAdviceEntry);
+  document.getElementById("adviceCancelEditBtn")?.addEventListener("click", () => {
+    resetProcedureAdviceForm(true);
+    renderProcedureAdviceView();
+  });
+  document.getElementById("adviceDownloadBtn")?.addEventListener("click", downloadProcedureAdviceReport);
+}
+
 function setCentreDetailTab(tab) {
   activeCentreDetailTab = tab === "petty" ? "petty" : "operations";
   document.querySelectorAll("[data-centre-detail]").forEach((button) => {
@@ -1587,6 +2003,16 @@ function shiftPettyCashAfterCenterRemoval(removedIndex) {
     if (oldIndex > removedIndex) shiftedEntries[oldIndex - 1] = pettyCash.entries[key];
   });
   pettyCash = { balances: shiftedBalances, entries: shiftedEntries };
+}
+
+function shiftProcedureAdviceAfterCenterRemoval(removedIndex) {
+  const shifted = {};
+  Object.keys(procedureAdvice || {}).forEach((key) => {
+    const oldIndex = Number(key);
+    if (oldIndex < removedIndex) shifted[oldIndex] = procedureAdvice[key];
+    if (oldIndex > removedIndex) shifted[oldIndex - 1] = procedureAdvice[key];
+  });
+  procedureAdvice = shifted;
 }
 
 function excelColumnName(index) {
@@ -1930,6 +2356,188 @@ function downloadPettyCashReport(centreIndex, month) {
   link.remove();
   URL.revokeObjectURL(url);
   showToast("Petty cash Excel downloaded");
+}
+
+function procedureAdviceSheetXml(rows, month, centreLabel) {
+  const metrics = adviceMetrics(rows);
+  const title = centreLabel === "all" ? "Procedure Advice Report" : `${centreLabel} Procedure Advice Report`;
+  const dataStartRow = 11;
+  const headerRow = dataStartRow;
+  const firstDataRow = dataStartRow + 1;
+  const lastDataRow = Math.max(firstDataRow, firstDataRow + rows.length - 1);
+  const sheetRows = [];
+
+  sheetRows.push(xlsxRow(1, Array.from({ length: 19 }, (_, index) => xlsxCell(1, index + 1, index === 0 ? title : "", 1))));
+  sheetRows.push(xlsxRow(2, [
+    xlsxCell(2, 1, "Month", 2),
+    xlsxCell(2, 2, month || ""),
+    xlsxCell(2, 3, "Centre", 2),
+    xlsxCell(2, 4, centreLabel === "all" ? "All Centres" : centreLabel),
+    xlsxCell(2, 5, "Status Filter", 2),
+    xlsxCell(2, 6, selectedAdviceStatus() === "all" ? "All outcomes" : adviceStatusLabel(selectedAdviceStatus()))
+  ]));
+  [
+    ["Total Advice Cases", metrics.total, "Completed", metrics.completed],
+    ["CAG Advised", metrics.procedureCounts.CAG || 0, "PTCA Advised", metrics.procedureCounts.PTCA || 0],
+    ["POBA Advised", metrics.procedureCounts.POBA || 0, "Not Done", metrics.notDone],
+    ["Done Here", metrics.doneHere, "Done Elsewhere", metrics.doneElsewhere]
+  ].forEach((row, offset) => {
+    const rowNo = 4 + offset;
+    sheetRows.push(xlsxRow(rowNo, [
+      xlsxCell(rowNo, 1, row[0], 2),
+      xlsxCell(rowNo, 2, row[1], 6),
+      xlsxCell(rowNo, 3, row[2], 2),
+      xlsxCell(rowNo, 4, row[3], 6)
+    ]));
+  });
+
+  const headers = [
+    "MONTH & YEAR", "SI NO", "DATE", "PATIENT NAME", "MOB-1", "MOB-2", "DOCTOR", "TYPE", "ADVISED",
+    "PROPOSED DATE", "CALL 1 DONE ON", "CALL DONE BY", "PATIENT REPLY", "REMINDER CALL 2 DONE ON",
+    "REMINDER CALL DONE BY", "PATIENT REPLY", "PROCEDURE DATE", "STATUS", "REMARK / FINDINGS"
+  ];
+  sheetRows.push(xlsxRow(headerRow, headers.map((header, index) => xlsxCell(headerRow, index + 1, header, 2))));
+
+  if (rows.length) {
+    rows.forEach((entry, index) => {
+      const rowNo = firstDataRow + index;
+      sheetRows.push(xlsxRow(rowNo, [
+        xlsxCell(rowNo, 1, (entry.date || "").slice(0, 7), 8),
+        xlsxCell(rowNo, 2, index + 1, 6),
+        xlsxCell(rowNo, 3, entry.date || "", 8),
+        xlsxCell(rowNo, 4, entry.patientName || "", 8),
+        xlsxCell(rowNo, 5, entry.mobile1 || "", 8),
+        xlsxCell(rowNo, 6, entry.mobile2 || "", 8),
+        xlsxCell(rowNo, 7, entry.doctor || "", 8),
+        xlsxCell(rowNo, 8, entry.patientType || "", 8),
+        xlsxCell(rowNo, 9, entry.advised || "", 8),
+        xlsxCell(rowNo, 10, entry.proposedDate || "", 8),
+        xlsxCell(rowNo, 11, entry.call1Date || "", 8),
+        xlsxCell(rowNo, 12, entry.call1By || "", 8),
+        xlsxCell(rowNo, 13, entry.call1Reply || "", 8),
+        xlsxCell(rowNo, 14, entry.call2Date || "", 8),
+        xlsxCell(rowNo, 15, entry.call2By || "", 8),
+        xlsxCell(rowNo, 16, entry.call2Reply || "", 8),
+        xlsxCell(rowNo, 17, entry.procedureDate || "", 8),
+        xlsxCell(rowNo, 18, adviceStatusLabel(adviceStatusKey(entry)), 8),
+        xlsxCell(rowNo, 19, entry.remarks || "", 8)
+      ]));
+    });
+  } else {
+    sheetRows.push(xlsxRow(firstDataRow, [xlsxCell(firstDataRow, 1, "No advice rows for this filter.", 8)]));
+  }
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:S${lastDataRow}"/>
+  <sheetViews><sheetView workbookViewId="0"/></sheetViews>
+  <sheetFormatPr defaultRowHeight="15"/>
+  <cols>
+    <col min="1" max="1" width="14" customWidth="1"/>
+    <col min="2" max="2" width="9" customWidth="1"/>
+    <col min="3" max="3" width="12" customWidth="1"/>
+    <col min="4" max="4" width="24" customWidth="1"/>
+    <col min="5" max="6" width="14" customWidth="1"/>
+    <col min="7" max="7" width="22" customWidth="1"/>
+    <col min="8" max="9" width="14" customWidth="1"/>
+    <col min="10" max="11" width="14" customWidth="1"/>
+    <col min="12" max="12" width="14" customWidth="1"/>
+    <col min="13" max="13" width="28" customWidth="1"/>
+    <col min="14" max="15" width="16" customWidth="1"/>
+    <col min="16" max="16" width="28" customWidth="1"/>
+    <col min="17" max="18" width="16" customWidth="1"/>
+    <col min="19" max="19" width="42" customWidth="1"/>
+  </cols>
+  <sheetData>${sheetRows.join("")}</sheetData>
+</worksheet>`;
+}
+
+function buildProcedureAdviceWorkbookBlob(rows, month, centreLabel) {
+  const files = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Advice Report" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr calcId="0" fullCalcOnLoad="1" forceFullCalc="1"/>
+</workbook>`
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`
+    },
+    { name: "xl/worksheets/sheet1.xml", content: procedureAdviceSheetXml(rows, month, centreLabel) },
+    { name: "xl/styles.xml", content: pettyStylesXml() },
+    {
+      name: "docProps/core.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>Procedure Advice Report</dc:title>
+  <dc:creator>KH Operations</dc:creator>
+  <cp:lastModifiedBy>KH Operations</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified>
+</cp:coreProperties>`
+    },
+    {
+      name: "docProps/app.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>KH Operations</Application>
+  <DocSecurity>0</DocSecurity>
+  <ScaleCrop>false</ScaleCrop>
+  <HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>1</vt:i4></vt:variant></vt:vector></HeadingPairs>
+  <TitlesOfParts><vt:vector size="1" baseType="lpstr"><vt:lpstr>Advice Report</vt:lpstr></vt:vector></TitlesOfParts>
+</Properties>`
+    }
+  ];
+  return zipStore(files);
+}
+
+function downloadProcedureAdviceReport() {
+  const rows = filteredProcedureAdviceRows();
+  const month = selectedAdviceMonth();
+  const centreFilter = selectedAdviceCentreFilter();
+  const centreLabel = currentRole === "centre"
+    ? centers[loggedInCentreIndex]?.name || "centre"
+    : (centreFilter === "all" ? "all" : (centers[Number(centreFilter)]?.name || "centre"));
+  const blob = buildProcedureAdviceWorkbookBlob(rows, month, centreLabel);
+  const safeCentre = centreLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `procedure-advice-${safeCentre || "all"}-${month || todayIST().slice(0, 7)}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Procedure advice Excel downloaded");
 }
 
 const SWIZTON_NUMERIC_FIELDS = [
@@ -2761,8 +3369,8 @@ function showView(name) {
   if (currentRole === "admin" && name === "entry") name = "admin";
   if (name === "consolidated") name = "admin"; // centre-only nav alias
   if (currentRole !== "centre" && name === "petty") name = "admin";
-  if (currentRole === "centre" && !["admin", "entry", "centre", "petty"].includes(name)) name = "admin";
-  if (activeCompany === "Swizton" && ["targets", "procedures", "users", "unlock", "centre", "petty"].includes(name)) name = "admin";
+  if (currentRole === "centre" && !["admin", "entry", "centre", "petty", "advice"].includes(name)) name = "admin";
+  if (activeCompany === "Swizton" && ["targets", "procedures", "users", "unlock", "centre", "petty", "advice"].includes(name)) name = "admin";
   // Superadmin-only views: block regular admin from accessing
   if (currentRole === "admin" && name === "superadmin") name = "admin";
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
@@ -2771,6 +3379,7 @@ function showView(name) {
   const titles = {
     admin: "Consolidated Dashboard",
     entry: "Daily Entry",
+    advice: "Procedure Advice",
     targets: "Monthly Targets",
     procedures: "Procedure Settings",
     users: "User Controls",
@@ -2804,6 +3413,9 @@ function showView(name) {
   }
   if (name === "petty") {
     renderPettyCashForCentre();
+  }
+  if (name === "advice") {
+    renderProcedureAdviceView();
   }
   if (name === "procedures") {
     renderProcedures();
@@ -2839,6 +3451,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     document.getElementById("lockedCentreName").textContent = centre.name;
     renderEntryForCurrentDate();
     renderPettyCashForCentre();
+    renderProcedureAdviceView();
     document.getElementById("exportCentre").value = String(loggedInCentreIndex);
     document.getElementById("exportCentre").disabled = true;
     renderConsolidated();
@@ -2853,6 +3466,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     document.getElementById("exportCentre").disabled = false;
     refreshCenterLists();
     renderConsolidated();
+    renderProcedureAdviceView();
     renderAdminReportPreview();
     showView("admin");
     return;
@@ -2870,6 +3484,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
   document.getElementById("exportCentre").disabled = false;
   refreshCenterLists();
   renderConsolidated();
+  renderProcedureAdviceView();
   renderAdminReportPreview();
   showView("admin");
 }
@@ -3385,6 +4000,7 @@ function removeCenter(index) {
   Object.keys(entries).forEach((key) => delete entries[key]);
   Object.assign(entries, shifted);
   shiftPettyCashAfterCenterRemoval(index);
+  shiftProcedureAdviceAfterCenterRemoval(index);
   loggedInCentreIndex = Math.min(loggedInCentreIndex, centers.length - 1);
   refreshCenterLists();
   renderTargets();
@@ -5054,6 +5670,7 @@ function renderCompanyTabs() {
 
 function updateCompanyNavigation() {
   const hideForSwizton = activeCompany === "Swizton" && currentRole !== "centre";
+  document.querySelector(`.nav-item[data-view="advice"]`)?.classList.toggle("hidden", activeCompany === "Swizton");
   ["targets", "procedures", "users", "unlock"].forEach((view) => {
     document.querySelector(`.nav-item[data-view="${view}"]`)?.classList.toggle("hidden", hideForSwizton);
   });
@@ -6095,6 +6712,7 @@ async function restoreSelectedCentre() {
   const restoredCentre = deepCloneValue(backupState.centers?.[backupCentreIndex], centers[currentCentreIndex]);
   restoredCentre.name = centreName;
   centers[currentCentreIndex] = restoredCentre;
+  procedureAdvice[currentCentreIndex] = deepCloneValue(backupState.procedureAdvice?.[backupCentreIndex], []);
 
   entries[currentCentreIndex] = deepCloneValue(backupState.entries?.[backupCentreIndex], {});
   if (entryMeta[currentCentreIndex]) delete entryMeta[currentCentreIndex];
@@ -6290,6 +6908,7 @@ async function init() {
   setupExportMenus();
   setupAdminControls();
   setupPettyControls();
+  setupProcedureAdviceControls();
   setupCentreDetailTabs();
   setupSuperAdminControls();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
@@ -6319,6 +6938,8 @@ async function init() {
   }
   const swiztonMonthInput = document.getElementById("swiztonMonth");
   if (swiztonMonthInput) swiztonMonthInput.value = today.slice(0, 7);
+  const adviceMonthInput = document.getElementById("adviceMonthFilter");
+  if (adviceMonthInput) adviceMonthInput.value = today.slice(0, 7);
   const pettyMonthInput = document.getElementById("pettyMonth");
   if (pettyMonthInput) pettyMonthInput.value = today.slice(0, 7);
   const adminPettyMonthInput = document.getElementById("adminPettyMonth");
@@ -6336,6 +6957,7 @@ async function init() {
   renderEntryForCurrentDate();
   renderPettyCashForCentre();
   renderCentrePettyDetail();
+  renderProcedureAdviceView();
   renderTargets();
   renderUsers();
   renderProcedures();

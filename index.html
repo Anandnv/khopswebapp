@@ -64,6 +64,9 @@
           <button class="nav-item centre-only" data-view="entry">
             <span>Daily Entry</span>
           </button>
+          <button class="nav-item" data-view="advice">
+            <span>Procedure Advice</span>
+          </button>
           <button class="nav-item centre-only" data-view="petty">
             <span>Petty Cash</span>
           </button>
@@ -722,6 +725,212 @@
                 </thead>
                 <tbody></tbody>
                 <tfoot></tfoot>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="adviceView" class="view">
+          <div class="access-banner">
+            <strong id="adviceViewTitle">Procedure Advice</strong>
+            <span id="adviceViewSubtitle">Track advised procedures, follow-up calls, final outcome, and export month-wise reports.</span>
+          </div>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Advice Tracker</h2>
+                <p>Simple monthly view of advised cases, follow-up progress, and final status.</p>
+              </div>
+              <div class="form-actions">
+                <div class="locked-centre centre-only">
+                  <span>Centre</span>
+                  <strong id="adviceLockedCentreName">Tirur</strong>
+                </div>
+                <input id="adviceMonthFilter" type="month" value="2026-04" aria-label="Procedure advice month" />
+                <select id="adviceCentreFilter" class="admin-only" aria-label="Procedure advice centre">
+                  <option value="all">All Centres</option>
+                </select>
+                <select id="adviceStatusFilter" aria-label="Procedure advice status">
+                  <option value="all">All outcomes</option>
+                  <option value="done_here">Done here</option>
+                  <option value="done_elsewhere">Done elsewhere</option>
+                  <option value="not_done">Not done</option>
+                  <option value="second_opinion">Second opinion</option>
+                  <option value="medication_only">Medication only</option>
+                  <option value="pending">Follow-up pending</option>
+                </select>
+                <button class="button primary" id="adviceDownloadBtn" type="button">Download Excel</button>
+              </div>
+            </div>
+
+            <div class="petty-summary-grid" id="adviceSummaryGrid"></div>
+
+            <div class="advice-breakdown-grid">
+              <section class="panel advice-breakdown-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>Advice Mix</h3>
+                    <p>Procedure types advised this month.</p>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact advice-mini-table" id="adviceTypeTable">
+                    <thead>
+                      <tr>
+                        <th>Advice</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section class="panel advice-breakdown-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>Outcome Split</h3>
+                    <p>Quick status summary in simplified wording.</p>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact advice-mini-table" id="adviceOutcomeTable">
+                    <thead>
+                      <tr>
+                        <th>Outcome</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="panel centre-only advice-entry-panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="adviceFormTitle">Add Advice Entry</h2>
+                <p>Save one patient advice row at a time using a simplified version of your sheet.</p>
+              </div>
+            </div>
+            <input id="adviceEntryId" type="hidden" />
+            <datalist id="adviceDoctorList"></datalist>
+            <datalist id="adviceProcedureList"></datalist>
+            <datalist id="adviceStatusList"></datalist>
+            <datalist id="adviceTypeList"></datalist>
+
+            <div class="advice-entry-grid">
+              <label>
+                <span>Date</span>
+                <input id="adviceDate" type="date" />
+              </label>
+              <label>
+                <span>Patient Name</span>
+                <input id="advicePatientName" type="text" placeholder="Patient name" />
+              </label>
+              <label>
+                <span>Mobile 1</span>
+                <input id="adviceMobile1" type="text" placeholder="Primary mobile" />
+              </label>
+              <label>
+                <span>Mobile 2</span>
+                <input id="adviceMobile2" type="text" placeholder="Alternate mobile" />
+              </label>
+              <label>
+                <span>Doctor</span>
+                <input id="adviceDoctor" type="text" list="adviceDoctorList" placeholder="Doctor name" />
+              </label>
+              <label>
+                <span>Patient Type</span>
+                <input id="adviceCaseType" type="text" list="adviceTypeList" placeholder="Cash / KASP / MEDISEP" />
+              </label>
+              <label>
+                <span>Advised Procedure</span>
+                <input id="adviceProcedure" type="text" list="adviceProcedureList" placeholder="CAG / PTCA / POBA" />
+              </label>
+              <label>
+                <span>Proposed Date</span>
+                <input id="adviceProposedDate" type="date" />
+              </label>
+              <label>
+                <span>Call 1 Date</span>
+                <input id="adviceCall1Date" type="date" />
+              </label>
+              <label>
+                <span>Call 1 By</span>
+                <input id="adviceCall1By" type="text" placeholder="Staff name" />
+              </label>
+              <label class="advice-wide-field">
+                <span>Call 1 Reply</span>
+                <input id="adviceCall1Reply" type="text" placeholder="Patient reply after first call" />
+              </label>
+              <label>
+                <span>Call 2 Date</span>
+                <input id="adviceCall2Date" type="date" />
+              </label>
+              <label>
+                <span>Call 2 By</span>
+                <input id="adviceCall2By" type="text" placeholder="Staff name" />
+              </label>
+              <label class="advice-wide-field">
+                <span>Call 2 Reply</span>
+                <input id="adviceCall2Reply" type="text" placeholder="Patient reply after second call" />
+              </label>
+              <label>
+                <span>Procedure Date</span>
+                <input id="adviceProcedureDate" type="date" />
+              </label>
+              <label>
+                <span>Outcome</span>
+                <input id="adviceStatus" type="text" list="adviceStatusList" placeholder="Done here / Not done / Follow-up" />
+              </label>
+              <label class="advice-wide-field advice-remarks-field">
+                <span>Remarks</span>
+                <input id="adviceRemarks" type="text" placeholder="Notes, findings, or reason" />
+              </label>
+            </div>
+            <div class="petty-entry-actions">
+              <button class="button secondary hidden" id="adviceCancelEditBtn" type="button">Cancel Edit</button>
+              <button class="button primary" id="adviceSubmitBtn" type="button">Add Entry</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2 id="adviceTableTitle">Advice Register</h2>
+                <p id="adviceTableSubtitle">Month-wise patient advice list with final status and follow-up details.</p>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table advice-table" id="adviceTable">
+                <thead>
+                  <tr>
+                    <th>Sl. No.</th>
+                    <th>Date</th>
+                    <th>Patient</th>
+                    <th>Mobile 1</th>
+                    <th>Mobile 2</th>
+                    <th>Doctor</th>
+                    <th>Type</th>
+                    <th>Advised</th>
+                    <th>Proposed</th>
+                    <th>Call 1</th>
+                    <th>Call 1 By</th>
+                    <th>Reply 1</th>
+                    <th>Call 2</th>
+                    <th>Call 2 By</th>
+                    <th>Reply 2</th>
+                    <th>Procedure Date</th>
+                    <th>Outcome</th>
+                    <th>Remarks</th>
+                    <th class="centre-only">Action</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
               </table>
             </div>
           </section>

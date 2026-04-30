@@ -1167,6 +1167,116 @@ select:focus, input:focus {
   margin-top: 14px;
 }
 
+.advice-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.advice-breakdown-card {
+  margin: 0;
+}
+
+.advice-mini-table tbody td:last-child,
+.advice-mini-table thead th:last-child {
+  text-align: right;
+}
+
+.advice-entry-panel .panel-head {
+  margin-bottom: 12px;
+}
+
+.advice-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.advice-entry-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.advice-entry-grid span {
+  color: var(--muted);
+  font-size: .72rem;
+  font-weight: 800;
+}
+
+.advice-entry-grid input {
+  width: 100%;
+  min-width: 0;
+}
+
+.advice-wide-field {
+  grid-column: span 2;
+}
+
+.advice-remarks-field {
+  grid-column: span 3;
+}
+
+.advice-table {
+  min-width: 1700px;
+}
+
+.advice-table td:nth-child(3),
+.advice-table th:nth-child(3),
+.advice-table td:nth-child(6),
+.advice-table th:nth-child(6),
+.advice-table td:nth-child(8),
+.advice-table th:nth-child(8),
+.advice-table td:nth-child(12),
+.advice-table th:nth-child(12),
+.advice-table td:nth-child(15),
+.advice-table th:nth-child(15),
+.advice-table td:nth-child(18),
+.advice-table th:nth-child(18) {
+  text-align: left;
+}
+
+.advice-outcome {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: .74rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.advice-outcome.done_here {
+  background: #e7f8ef;
+  color: #0c6a3a;
+}
+
+.advice-outcome.done_elsewhere {
+  background: #eaf3ff;
+  color: #1d4f91;
+}
+
+.advice-outcome.not_done {
+  background: #fdeaea;
+  color: #a12727;
+}
+
+.advice-outcome.second_opinion {
+  background: #fff2de;
+  color: #9a5a00;
+}
+
+.advice-outcome.medication_only {
+  background: #f3edff;
+  color: #6e40b0;
+}
+
+.advice-outcome.pending {
+  background: #eef2f7;
+  color: #526070;
+}
+
 .petty-table { min-width: 980px; }
 
 .petty-table td:nth-child(3),
@@ -1260,6 +1370,7 @@ select:focus, input:focus {
   :root { --sidebar-w: 240px; }
   .metric-grid { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .report-preview-grid { grid-template-columns: 1fr; }
+  .advice-breakdown-grid { grid-template-columns: 1fr; }
   .swizton-section-grid { grid-template-columns: 1fr; }
   .petty-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1310,7 +1421,9 @@ select:focus, input:focus {
   .entry-grid,
   .dashboard-grid,
   .filter-grid,
+  .advice-breakdown-grid,
   .report-preview-grid,
+  .advice-entry-grid,
   .petty-entry-grid,
   .swizton-section-grid,
   .donut-row,
@@ -1397,7 +1510,9 @@ select:focus, input:focus {
   }
   .company-pill { justify-content: center; }
   .petty-particulars-field,
-  .petty-remarks-field { grid-column: auto; }
+  .petty-remarks-field,
+  .advice-wide-field,
+  .advice-remarks-field { grid-column: auto; }
 
   .locked-centre {
     min-width: 0;
@@ -1561,6 +1676,7 @@ select:focus, input:focus {
   .petty-summary-grid { grid-template-columns: 1fr; }
   .petty-entry-actions { justify-content: stretch; }
   .petty-entry-actions .button { flex: 1; }
+  .advice-table { min-width: 1300px; }
   .swizton-common-fields { grid-template-columns: 1fr; }
   .bar-row { grid-template-columns: 78px 1fr 38px; gap: 7px; }
   .donut { width: 132px; height: 132px; margin-inline: auto; }
