@@ -963,8 +963,8 @@ function cagProcedures() {
 function isCountedProcedure(procedureName) {
   return activeCompanyProcedureRows().some(({ procedure }) => procedure.name === procedureName && procedure.active && procedure.counted);
 }
-const opMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
-const adminOpsMetrics = ["Total OP", "IP", "New OP", "ECG", "ECHO", "TMT"];
+const opMetrics = ["Total OP", /* "IP", */ "New OP", "ECG", "ECHO", "TMT"];
+const adminOpsMetrics = ["Total OP", /* "IP", */ "New OP", "ECG", "ECHO", "TMT"];
 const referralMetrics = [
   "Patient Referral - OP",
   "Patient Referral - ECG",
@@ -1159,7 +1159,7 @@ function filteredDailyRows() {
         kasp: payers.kasp,
         medisep: payers.medisep,
         op: currencySafeNumber((entry.op || {})["Total OP"]),
-        ip: currencySafeNumber((entry.op || {}).IP),
+        // ip: currencySafeNumber((entry.op || {}).IP), // IP removed
         newOp: currencySafeNumber((entry.op || {})["New OP"]),
         ecg: currencySafeNumber((entry.op || {}).ECG),
         echo: currencySafeNumber((entry.op || {}).ECHO),
@@ -1191,7 +1191,7 @@ function filteredConsolidatedRows() {
       kasp: intervention.kasp,
       medisep: intervention.medisep,
       opTotal: op["Total OP"].total,
-      ipTotal: op.IP.total,
+      // ipTotal: op.IP.total, // IP removed
       newOpTotal: op["New OP"].total,
       ecgTotal: op.ECG.total,
       echoTotal: op.ECHO.total,
@@ -1203,12 +1203,12 @@ function filteredConsolidatedRows() {
 function consolidatedTotals(rows) {
   return rows.reduce(
     (totals, row) => {
-      ["target", "tillYesterday", "today", "total", "cagToday", "cagTotal", "general", "kasp", "medisep", "opTotal", "ipTotal", "newOpTotal", "ecgTotal", "echoTotal", "tmtTotal"].forEach((key) => {
+      ["target", "tillYesterday", "today", "total", "cagToday", "cagTotal", "general", "kasp", "medisep", "opTotal", /* "ipTotal", */ "newOpTotal", "ecgTotal", "echoTotal", "tmtTotal"].forEach((key) => {
         totals[key] += row[key] || 0;
       });
       return totals;
     },
-    { target: 0, tillYesterday: 0, today: 0, total: 0, cagToday: 0, cagTotal: 0, general: 0, kasp: 0, medisep: 0, opTotal: 0, ipTotal: 0, newOpTotal: 0, ecgTotal: 0, echoTotal: 0, tmtTotal: 0 }
+    { target: 0, tillYesterday: 0, today: 0, total: 0, cagToday: 0, cagTotal: 0, general: 0, kasp: 0, medisep: 0, opTotal: 0, /* ipTotal: 0, */ newOpTotal: 0, ecgTotal: 0, echoTotal: 0, tmtTotal: 0 }
   );
 }
 
@@ -2124,7 +2124,7 @@ function reportTotals(rows) {
       totals.days.add(row.date);
       return totals;
     },
-    { intervention: 0, cag: 0, general: 0, kasp: 0, medisep: 0, op: 0, ip: 0, newOp: 0, ecg: 0, echo: 0, tmt: 0, days: new Set() }
+    { intervention: 0, cag: 0, general: 0, kasp: 0, medisep: 0, op: 0, /* ip: 0, */ newOp: 0, ecg: 0, echo: 0, tmt: 0, days: new Set() }
   );
 }
 
@@ -2175,7 +2175,7 @@ function seedInitialEntries() {
     const today = getEntry(index, "2026-04-20");
     previous.op = {
       "Total OP": 520 + index * 18,
-      IP: 80 + index * 3,
+      // IP: 80 + index * 3, // IP removed
       "New OP": 91 + index * 5,
       ECG: 188 + index * 8,
       ECHO: 334 + index * 6,
@@ -2183,7 +2183,7 @@ function seedInitialEntries() {
     };
     today.op = {
       "Total OP": 62 - index * 3 > 0 ? 62 - index * 3 : 12,
-      IP: 11 + index,
+      // IP: 11 + index, // IP removed
       "New OP": 6 + index,
       ECG: 23 + index,
       ECHO: 36 - index > 0 ? 36 - index : 8,
@@ -2202,7 +2202,7 @@ function seedInitialEntries() {
     const marchToday = getEntry(index, "2026-03-31");
     marchPrevious.op = {
       "Total OP": 410 + index * 14,
-      IP: 65 + index * 2,
+      // IP: 65 + index * 2, // IP removed
       "New OP": 74 + index * 3,
       ECG: 142 + index * 6,
       ECHO: 255 + index * 5,
@@ -2210,7 +2210,7 @@ function seedInitialEntries() {
     };
     marchToday.op = {
       "Total OP": 36 + index,
-      IP: 8 + index,
+      // IP: 8 + index, // IP removed
       "New OP": 5 + index,
       ECG: 15 + index,
       ECHO: 22 + index,
@@ -2226,7 +2226,7 @@ function seedInitialEntries() {
     const febToday = getEntry(index, "2026-02-28");
     febPrevious.op = {
       "Total OP": 300 + index * 12,
-      IP: 48 + index,
+      // IP: 48 + index, // IP removed
       "New OP": 58 + index * 2,
       ECG: 110 + index * 4,
       ECHO: 190 + index * 4,
@@ -2234,7 +2234,7 @@ function seedInitialEntries() {
     };
     febToday.op = {
       "Total OP": 29 + index,
-      IP: 5 + index,
+      // IP: 5 + index, // IP removed
       "New OP": 4 + index,
       ECG: 11 + index,
       ECHO: 18 + index,
@@ -3054,7 +3054,7 @@ function renderSnapshot(center) {
   const op = (metric) => center.ops?.[metric]?.today ?? opRollup(index, reportDate, metric).today;
   document.getElementById("snapshotGrid").innerHTML = `
     <div class="snapshot-item"><span>OP Today</span><strong>${op("Total OP")}</strong></div>
-    <div class="snapshot-item"><span>IP Today</span><strong>${op("IP")}</strong></div>
+    <!-- <div class="snapshot-item"><span>IP Today</span><strong>${op("IP")}</strong></div> -->
     <div class="snapshot-item"><span>CAG Today</span><strong>${center.cagToday}</strong></div>
     <div class="snapshot-item"><span>Intervention Today</span><strong>${center.yesterday}</strong></div>
     <div class="snapshot-item"><span>ECG Today</span><strong>${op("ECG")}</strong></div>
@@ -3689,7 +3689,7 @@ function filteredRowsToCsv(rows) {
     "KASP",
     "MEDISEP",
     "OP",
-    "IP",
+    // "IP", // IP removed
     "New OP",
     "ECG",
     "Echo",
@@ -3704,7 +3704,7 @@ function filteredRowsToCsv(rows) {
     row.kasp,
     row.medisep,
     row.op,
-    row.ip,
+    // row.ip, // IP removed
     row.newOp,
     row.ecg,
     row.echo,
@@ -3719,7 +3719,7 @@ function filteredRowsToCsv(rows) {
     totals.kasp,
     totals.medisep,
     totals.op,
-    totals.ip,
+    // totals.ip, // IP removed
     totals.newOp,
     totals.ecg,
     totals.echo,
@@ -3744,7 +3744,7 @@ function consolidatedRowsToCsv(rows) {
     "KASP",
     "MEDISEP",
     "OP Total",
-    "IP Total",
+    // "IP Total", // IP removed
     "New OP Total",
     "ECG Total",
     "Echo Total",
@@ -3763,7 +3763,7 @@ function consolidatedRowsToCsv(rows) {
     row.kasp,
     row.medisep,
     row.opTotal,
-    row.ipTotal,
+    // row.ipTotal, // IP removed
     row.newOpTotal,
     row.ecgTotal,
     row.echoTotal,
@@ -3782,7 +3782,7 @@ function consolidatedRowsToCsv(rows) {
     totals.kasp,
     totals.medisep,
     totals.opTotal,
-    totals.ipTotal,
+    // totals.ipTotal, // IP removed
     totals.newOpTotal,
     totals.ecgTotal,
     totals.echoTotal,
@@ -4019,7 +4019,7 @@ function professionalReportHtml() {
       <td>${row.kasp}</td>
       <td>${row.medisep}</td>
       <td>${row.op}</td>
-      <td>${row.ip}</td>
+      <!-- <td>${row.ip}</td> IP removed -->
       <td>${row.newOp}</td>
       <td>${row.ecg}</td>
       <td>${row.echo}</td>
@@ -4036,7 +4036,7 @@ function professionalReportHtml() {
       <td>${totals.kasp}</td>
       <td>${totals.medisep}</td>
       <td>${totals.op}</td>
-      <td>${totals.ip}</td>
+      <!-- <td>${totals.ip}</td> IP removed -->
       <td>${totals.newOp}</td>
       <td>${totals.ecg}</td>
       <td>${totals.echo}</td>
@@ -4057,7 +4057,7 @@ function professionalReportHtml() {
       <td>${row.kasp}</td>
       <td>${row.medisep}</td>
       <td>${row.opTotal}</td>
-      <td>${row.ipTotal}</td>
+      <!-- <td>${row.ipTotal}</td> IP removed -->
     </tr>
   `).join("");
   const consolidatedTotalRow = `
@@ -4074,23 +4074,23 @@ function professionalReportHtml() {
       <td>${consolidatedTotal.kasp}</td>
       <td>${consolidatedTotal.medisep}</td>
       <td>${consolidatedTotal.opTotal}</td>
-      <td>${consolidatedTotal.ipTotal}</td>
+      <!-- <td>${consolidatedTotal.ipTotal}</td> IP removed -->
     </tr>
   `;
   const tableSection = isDaily ? `
     <section>
       <h2>Daily Wise Detailed Data</h2>
       <table>
-        <thead><tr><th>Date</th><th>Centre</th><th>Intervention</th><th>CAG</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP</th><th>IP</th><th>New OP</th><th>ECG</th><th>Echo</th><th>TMT</th></tr></thead>
-        <tbody>${dailyTableRows ? `${dailyTableRows}${dailyTotalRow}` : `<tr><td colspan="13">No saved data for selected filters.</td></tr>`}</tbody>
+        <thead><tr><th>Date</th><th>Centre</th><th>Intervention</th><th>CAG</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP</th><!-- <th>IP</th> --><th>New OP</th><th>ECG</th><th>Echo</th><th>TMT</th></tr></thead>
+        <tbody>${dailyTableRows ? `${dailyTableRows}${dailyTotalRow}` : `<tr><td colspan="12">No saved data for selected filters.</td></tr>`}</tbody>
       </table>
     </section>
   ` : `
     <section>
       <h2>Consolidated Summary</h2>
       <table>
-        <thead><tr><th>Centre</th><th>Target</th><th>Till Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><th>IP Total</th></tr></thead>
-        <tbody>${consolidatedTableRows ? `${consolidatedTableRows}${consolidatedTotalRow}` : `<tr><td colspan="13">No saved data for selected filters.</td></tr>`}</tbody>
+        <thead><tr><th>Centre</th><th>Target</th><th>Till Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><!-- <th>IP Total</th> --></tr></thead>
+        <tbody>${consolidatedTableRows ? `${consolidatedTableRows}${consolidatedTotalRow}` : `<tr><td colspan="12">No saved data for selected filters.</td></tr>`}</tbody>
       </table>
     </section>
   `;
@@ -5232,14 +5232,14 @@ function centreStateSummary(state, centreName) {
   let interventionTotal = 0;
   let cagTotal = 0;
   let opTotal = 0;
-  let ipTotal = 0;
+  // let ipTotal = 0; // IP removed
 
   dates.forEach((date) => {
     const entry = centreEntries[date] || emptyEntry();
     interventionTotal += entryInterventionTotal(entry);
     cagTotal += entryCagTotal(entry);
     opTotal += currencySafeNumber((entry.op || {})["Total OP"]);
-    ipTotal += currencySafeNumber((entry.op || {}).IP);
+    // ipTotal += currencySafeNumber((entry.op || {}).IP); // IP removed
   });
 
   return {
@@ -5251,14 +5251,14 @@ function centreStateSummary(state, centreName) {
     interventionTotal,
     cagTotal,
     opTotal,
-    ipTotal,
+    // ipTotal, // IP removed
     entryMeta: state?.entryMeta?.[centreIndex] || {}
   };
 }
 
 function formatCentreSummary(summary) {
   if (!summary) return "Missing";
-  return `Target ${summary.target} | Dates ${summary.datesCount} | Intv ${summary.interventionTotal} | CAG ${summary.cagTotal} | OP ${summary.opTotal} | IP ${summary.ipTotal} | Last ${summary.latestDate}`;
+  return `Target ${summary.target} | Dates ${summary.datesCount} | Intv ${summary.interventionTotal} | CAG ${summary.cagTotal} | OP ${summary.opTotal} | Last ${summary.latestDate}`; // IP removed
 }
 
 function buildCentreDiffText(currentSummary, backupSummary) {
@@ -5273,7 +5273,7 @@ function buildCentreDiffText(currentSummary, backupSummary) {
     ["interventionTotal", "Intervention"],
     ["cagTotal", "CAG"],
     ["opTotal", "OP"],
-    ["ipTotal", "IP"]
+    // ["ipTotal", "IP"] // IP removed
   ];
 
   fields.forEach(([key, label]) => {
