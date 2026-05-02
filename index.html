@@ -810,12 +810,11 @@
           </section>
 
           <section class="panel centre-only advice-entry-panel">
-            <div class="panel-head">
-              <div>
-                <h2 id="adviceFormTitle">Add Advice Entry</h2>
-                <p>Save one patient advice row at a time using a simplified version of your sheet.</p>
-              </div>
+            <div style="display:block;width:100%;margin-bottom:16px">
+              <h2 id="adviceFormTitle" style="margin:0 0 4px;font-size:1rem;font-weight:700">Add Advice Entry</h2>
+              <p style="margin:0;color:var(--muted);font-size:.875rem">Save one patient advice row at a time using a simplified version of your sheet.</p>
             </div>
+
             <input id="adviceEntryId" type="hidden" />
             <datalist id="adviceDoctorList"></datalist>
             <datalist id="adviceProcedureList"></datalist>
@@ -887,12 +886,13 @@
                 <span>Outcome</span>
                 <input id="adviceStatus" type="text" list="adviceStatusList" placeholder="Done here / Not done / Follow-up" />
               </label>
-              <label class="advice-wide-field advice-remarks-field">
+              <label class="advice-remarks-field">
                 <span>Remarks</span>
                 <input id="adviceRemarks" type="text" placeholder="Notes, findings, or reason" />
               </label>
             </div>
-            <div class="petty-entry-actions">
+
+            <div class="advice-entry-actions">
               <button class="button secondary hidden" id="adviceCancelEditBtn" type="button">Cancel Edit</button>
               <button class="button primary" id="adviceSubmitBtn" type="button">Add Entry</button>
             </div>

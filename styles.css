@@ -1183,38 +1183,45 @@ select:focus, input:focus {
   text-align: right;
 }
 
-.advice-entry-panel .panel-head {
-  margin-bottom: 12px;
+/* ─── Advice entry form ──────────────────────────────────────────────────── */
+.advice-entry-panel {
+  display: block !important;
 }
 
 .advice-entry-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .advice-entry-grid label {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 5px;
 }
 
-.advice-entry-grid span {
+.advice-entry-grid label span {
   color: var(--muted);
   font-size: .72rem;
   font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
 }
 
-.advice-entry-grid input {
+.advice-entry-grid label input {
   width: 100%;
-  min-width: 0;
+  height: 38px;
 }
 
-.advice-wide-field {
-  grid-column: span 2;
-}
+.advice-wide-field   { grid-column: span 2; }
+.advice-remarks-field { grid-column: span 4; }
 
-.advice-remarks-field {
-  grid-column: span 3;
+.advice-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .advice-table {
@@ -1247,35 +1254,12 @@ select:focus, input:focus {
   white-space: nowrap;
 }
 
-.advice-outcome.done_here {
-  background: #e7f8ef;
-  color: #0c6a3a;
-}
-
-.advice-outcome.done_elsewhere {
-  background: #eaf3ff;
-  color: #1d4f91;
-}
-
-.advice-outcome.not_done {
-  background: #fdeaea;
-  color: #a12727;
-}
-
-.advice-outcome.second_opinion {
-  background: #fff2de;
-  color: #9a5a00;
-}
-
-.advice-outcome.medication_only {
-  background: #f3edff;
-  color: #6e40b0;
-}
-
-.advice-outcome.pending {
-  background: #eef2f7;
-  color: #526070;
-}
+.advice-outcome.done_here      { background: #e7f8ef; color: #0c6a3a; }
+.advice-outcome.done_elsewhere { background: #eaf3ff; color: #1d4f91; }
+.advice-outcome.not_done       { background: #fdeaea; color: #a12727; }
+.advice-outcome.second_opinion { background: #fff2de; color: #9a5a00; }
+.advice-outcome.medication_only{ background: #f3edff; color: #6e40b0; }
+.advice-outcome.pending        { background: #eef2f7; color: #526070; }
 
 .petty-table { min-width: 980px; }
 
@@ -1375,6 +1359,7 @@ select:focus, input:focus {
   .petty-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .filter-grid { grid-template-columns: repeat(3, 1fr); }
   .swizton-common-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .advice-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1280px) {
@@ -1423,7 +1408,6 @@ select:focus, input:focus {
   .filter-grid,
   .advice-breakdown-grid,
   .report-preview-grid,
-  .advice-entry-grid,
   .petty-entry-grid,
   .swizton-section-grid,
   .donut-row,
@@ -1510,9 +1494,14 @@ select:focus, input:focus {
   }
   .company-pill { justify-content: center; }
   .petty-particulars-field,
-  .petty-remarks-field,
+  .petty-remarks-field { grid-column: auto; }
+
+  .advice-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .advice-wide-field,
-  .advice-remarks-field { grid-column: auto; }
+  .advice-remarks-field { grid-column: span 2; }
 
   .locked-centre {
     min-width: 0;
@@ -1677,6 +1666,9 @@ select:focus, input:focus {
   .petty-entry-actions { justify-content: stretch; }
   .petty-entry-actions .button { flex: 1; }
   .advice-table { min-width: 1300px; }
+  .advice-entry-grid { grid-template-columns: 1fr; }
+  .advice-wide-field,
+  .advice-remarks-field { grid-column: span 1; }
   .swizton-common-fields { grid-template-columns: 1fr; }
   .bar-row { grid-template-columns: 78px 1fr 38px; gap: 7px; }
   .donut { width: 132px; height: 132px; margin-inline: auto; }
