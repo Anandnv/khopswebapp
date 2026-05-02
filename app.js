@@ -1974,13 +1974,15 @@ function setupProcedureAdviceControls() {
 }
 
 function setCentreDetailTab(tab) {
-  activeCentreDetailTab = tab === "petty" ? "petty" : "operations";
+  activeCentreDetailTab = ["petty", "editdata"].includes(tab) ? tab : "operations";
   document.querySelectorAll("[data-centre-detail]").forEach((button) => {
     button.classList.toggle("active", button.dataset.centreDetail === activeCentreDetailTab);
   });
   document.getElementById("centreOperationsDetail")?.classList.toggle("active", activeCentreDetailTab === "operations");
   document.getElementById("centrePettyDetail")?.classList.toggle("active", activeCentreDetailTab === "petty");
+  document.getElementById("centreEditDataDetail")?.classList.toggle("active", activeCentreDetailTab === "editdata");
   if (activeCentreDetailTab === "petty") renderCentrePettyDetail();
+  if (activeCentreDetailTab === "editdata") renderAdminEditDataTab();
 }
 
 function setupCentreDetailTabs() {
@@ -6910,6 +6912,7 @@ async function init() {
   setupPettyControls();
   setupProcedureAdviceControls();
   setupCentreDetailTabs();
+  setupAdminEditDataTab();
   setupSuperAdminControls();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
   document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
@@ -7170,6 +7173,7 @@ function renderAdminAuditLog() {
     remove_admin:          ["audit-badge-revert",  "Removed Admin"],
     assign_centres:        ["audit-badge-normal",  "Assigned Centres"],
     change_admin_password: ["audit-badge-normal",  "Password Changed"],
+    admin_data_edit:       ["audit-badge-unlock",  "Admin Data Edit"],
   };
 
   container.innerHTML = logs.map(log => {
@@ -7310,6 +7314,187 @@ function setupCaptureButtons() {
       capturePanel(btn.dataset.capture);
     });
   });
+}
+
+// ─── Admin Edit Data Feature ──────────────────────────────────────────────────
+
+let adminEditEnabled = false; // true after admin confirms the warning modal
+
+function renderAdminEditDataTab() {
+  const centreIndex = activeCentreDashboardIndex;
+  const centre = centers[centreIndex];
+
+  // Set centre name in warning banner
+  const nameEl = document.getElementById("adminEditCentreName");
+  if (nameEl) nameEl.textContent = centre?.name || "";
+
+  // Default date to reportDate
+  const dateInput = document.getElementById("adminEditDate");
+  if (dateInput && !dateInput.value) dateInput.value = reportDate;
+
+  // Reset to locked state when switching to this tab
+  adminEditEnabled = false;
+  setAdminEditLocked(true);
+
+  // Load the current date's data in read-only mode
+  adminEditLoadDate(false);
+}
+
+function setAdminEditLocked(locked) {
+  const wrap = document.getElementById("adminEditFormWrap");
+  const saveBtn = document.getElementById("adminEditSaveBtn");
+  const enableBtn = document.getElementById("adminEditEnableBtn");
+  if (wrap) wrap.classList.toggle("admin-edit-form-locked", locked);
+  if (saveBtn) saveBtn.classList.toggle("hidden", locked);
+  if (enableBtn) enableBtn.textContent = locked ? "Enable Editing" : "🔒 Lock / Cancel";
+}
+
+function adminEditLoadDate(editable) {
+  const centreIndex = activeCentreDashboardIndex;
+  const dateInput = document.getElementById("adminEditDate");
+  const date = dateInput?.value || reportDate;
+  const today = todayIST();
+
+  // Guard: no future dates
+  if (date > today) {
+    showToast("Cannot edit future dates.");
+    return;
+  }
+
+  // Last updated meta
+  const metaEl = document.getElementById("adminEditLastUpdated");
+  if (metaEl) {
+    const meta = getEntryMeta(centreIndex, date);
+    metaEl.textContent = meta ? `Last saved: ${formatSavedAt(meta.savedAt)} by ${meta.savedBy}` : "No entry saved for this date yet.";
+  }
+
+  renderEntryList("adminOpEntry", opMetrics, "op", centreIndex, date, editable);
+  renderEntryList("adminReferralEntry", referralMetrics, "referrals", centreIndex, date, editable);
+  renderProcedureTable("adminProcedureEntryTable", editable, centreIndex, date);
+}
+
+function adminSaveEntry() {
+  if (!adminEditEnabled) {
+    showToast("Enable editing first.");
+    return;
+  }
+  if (currentRole === "centre") {
+    showToast("This action is for admins only.");
+    return;
+  }
+
+  const centreIndex = activeCentreDashboardIndex;
+  const centre = centers[centreIndex];
+  const dateInput = document.getElementById("adminEditDate");
+  const date = dateInput?.value || reportDate;
+  const today = todayIST();
+
+  if (date > today) {
+    showToast("Cannot save data for a future date.");
+    return;
+  }
+
+  const actorLabel = getCurrentActorLabel();
+  const entry = getEntry(centreIndex, date);
+  const beforeSnapshot = deepCloneEntry(entry);
+
+  entry.op = {};
+  entry.referrals = {};
+  entry.procedures = {};
+
+  document.querySelectorAll("#adminOpEntry .entry-row:not(.header)").forEach((row) => {
+    const metric = row.dataset.metric;
+    const input = row.querySelector("input");
+    if (input) entry.op[metric] = currencySafeNumber(input.value);
+  });
+
+  document.querySelectorAll("#adminReferralEntry .entry-row:not(.header)").forEach((row) => {
+    const metric = row.dataset.metric;
+    const input = row.querySelector("input");
+    if (input) entry.referrals[metric] = currencySafeNumber(input.value);
+  });
+
+  document.querySelectorAll("#adminProcedureEntryTable tbody tr").forEach((row) => {
+    const cells = row.querySelectorAll("td");
+    const procedure = cells[0].textContent.trim();
+    const generalToday = currencySafeNumber(cells[2].querySelector("input")?.value);
+    const kaspToday = currencySafeNumber(cells[5].querySelector("input")?.value);
+    const medisepToday = currencySafeNumber(cells[8].querySelector("input")?.value);
+    setProcedure(entry, procedure, "general", generalToday);
+    setProcedure(entry, procedure, "kasp", kaspToday);
+    setProcedure(entry, procedure, "medisep", medisepToday);
+  });
+
+  // Audit logs
+  writeAuditLog(centreIndex, date, beforeSnapshot, entry);
+  writeAdminAuditLog(
+    "admin_data_edit",
+    `${actorLabel} edited daily data for ${centre.name} on ${displayDate(date)}`,
+    [centreIndex]
+  );
+
+  setEntryMeta(centreIndex, date, `${actorLabel} (admin edit)`);
+
+  setReportDate(date);
+  refreshCenterRollups(reportDate);
+  renderConsolidated();
+  renderBars();
+  renderPayerSplit();
+
+  // Refresh the read-only view to confirm saved values
+  adminEditEnabled = false;
+  setAdminEditLocked(true);
+  adminEditLoadDate(false);
+
+  // Refresh the operations tab snapshot too
+  openCentre(centreIndex, "editdata");
+
+  persistEntry(centreIndex, date);
+  showToast(`✅ ${centre.name} data for ${displayDate(date)} saved by ${actorLabel}`);
+}
+
+function setupAdminEditDataTab() {
+  // Load date button
+  document.getElementById("adminEditLoadBtn")?.addEventListener("click", () => {
+    adminEditEnabled = false;
+    setAdminEditLocked(true);
+    adminEditLoadDate(false);
+  });
+
+  // Enable editing button → open warning modal
+  document.getElementById("adminEditEnableBtn")?.addEventListener("click", () => {
+    if (adminEditEnabled) {
+      // Already enabled — act as cancel/lock
+      adminEditEnabled = false;
+      setAdminEditLocked(true);
+      adminEditLoadDate(false);
+      return;
+    }
+    const date = document.getElementById("adminEditDate")?.value || reportDate;
+    const centre = centers[activeCentreDashboardIndex];
+    document.getElementById("adminEditModalCentreName").textContent = centre?.name || "";
+    document.getElementById("adminEditModalDate").textContent = displayDate(date);
+    document.getElementById("adminEditWarningModal").classList.remove("hidden");
+  });
+
+  // Modal cancel
+  document.getElementById("adminEditModalCancel")?.addEventListener("click", () => {
+    document.getElementById("adminEditWarningModal").classList.add("hidden");
+  });
+  document.getElementById("adminEditModalClose")?.addEventListener("click", () => {
+    document.getElementById("adminEditWarningModal").classList.add("hidden");
+  });
+
+  // Modal confirm → enable editing
+  document.getElementById("adminEditModalConfirm")?.addEventListener("click", () => {
+    document.getElementById("adminEditWarningModal").classList.add("hidden");
+    adminEditEnabled = true;
+    setAdminEditLocked(false);
+    adminEditLoadDate(true);
+  });
+
+  // Save button
+  document.getElementById("adminEditSaveBtn")?.addEventListener("click", adminSaveEntry);
 }
 
 init();

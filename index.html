@@ -466,6 +466,7 @@
           <div class="centre-detail-tabs">
             <button class="centre-detail-tab active" type="button" data-centre-detail="operations">Operations</button>
             <button class="centre-detail-tab" type="button" data-centre-detail="petty">Petty Cash</button>
+            <button class="centre-detail-tab admin-only" type="button" data-centre-detail="editdata">✏️ Edit Data</button>
           </div>
 
           <div class="centre-detail-pane active" id="centreOperationsDetail">
@@ -548,6 +549,82 @@
                   <tbody></tbody>
                   <tfoot></tfoot>
                 </table>
+              </div>
+            </section>
+          </div>
+
+          <!-- Admin Edit Data pane -->
+          <div class="centre-detail-pane" id="centreEditDataDetail">
+            <div class="admin-edit-warning-banner" id="adminEditWarningBanner">
+              <div class="admin-edit-warning-inner">
+                <span class="admin-edit-warning-icon">⚠️</span>
+                <div>
+                  <strong>Admin Data Edit Mode</strong>
+                  <p>You are editing daily data on behalf of <span id="adminEditCentreName"></span>. Changes will be saved immediately and reflected in all reports. This action is logged in the audit trail.</p>
+                </div>
+                <button class="button secondary" id="adminEditEnableBtn">Enable Editing</button>
+              </div>
+            </div>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Edit Centre Daily Data</h2>
+                  <p>Select a date and edit the daily entry for this centre. All changes are audit-logged.</p>
+                </div>
+                <div class="form-actions">
+                  <input id="adminEditDate" type="date" aria-label="Edit date" />
+                  <button class="button secondary" id="adminEditLoadBtn" type="button">Load Date</button>
+                </div>
+              </div>
+              <p id="adminEditLastUpdated" class="entry-meta"></p>
+
+              <div id="adminEditFormWrap" class="admin-edit-form-locked">
+                <div class="entry-grid">
+                  <div>
+                    <h3>OP Details</h3>
+                    <div class="entry-list" id="adminOpEntry"></div>
+                  </div>
+                  <div>
+                    <h3>Patient Referrals</h3>
+                    <div class="entry-list" id="adminReferralEntry"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" id="adminEditProcedurePanel">
+              <div class="panel-head"><h2>Procedure Entry</h2></div>
+              <div class="table-wrap">
+                <table class="data-table compact entry-table" id="adminProcedureEntryTable">
+                  <thead>
+                    <tr class="group-row">
+                      <th rowspan="2">Procedure</th>
+                      <th colspan="3">General</th>
+                      <th colspan="3">KASP</th>
+                      <th colspan="3">MEDISEP</th>
+                      <th colspan="3">Total</th>
+                    </tr>
+                    <tr>
+                      <th>General Till Yesterday</th>
+                      <th>General Today</th>
+                      <th>General Total</th>
+                      <th>KASP Till Yesterday</th>
+                      <th>KASP Today</th>
+                      <th>KASP Total</th>
+                      <th>MEDISEP Till Yesterday</th>
+                      <th>MEDISEP Today</th>
+                      <th>MEDISEP Total</th>
+                      <th>Total Till Yesterday</th>
+                      <th>Total Today</th>
+                      <th>Grand Total</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="form-actions" style="margin-top:16px;justify-content:flex-end">
+                <button class="button primary hidden" id="adminEditSaveBtn" type="button">💾 Save Changes</button>
               </div>
             </section>
           </div>
@@ -766,7 +843,27 @@
 
             <div class="petty-summary-grid" id="adviceSummaryGrid"></div>
 
-            <div class="advice-breakdown-grid advice-breakdown-single">
+            <div class="advice-breakdown-grid">
+              <section class="panel advice-breakdown-card">
+                <div class="panel-head">
+                  <div>
+                    <h3>Advice Mix</h3>
+                    <p>Procedure types advised this month.</p>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table class="data-table compact advice-mini-table" id="adviceTypeTable">
+                    <thead>
+                      <tr>
+                        <th>Advice</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+              </section>
+
               <section class="panel advice-breakdown-card">
                 <div class="panel-head">
                   <div>
@@ -774,15 +871,17 @@
                     <p>Quick status summary in simplified wording.</p>
                   </div>
                 </div>
-                <table class="advice-mini-table advice-mini-table--inline" id="adviceOutcomeTable">
-                  <thead>
-                    <tr>
-                      <th>Outcome</th>
-                      <th>Count</th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                </table>
+                <div class="table-wrap">
+                  <table class="data-table compact advice-mini-table" id="adviceOutcomeTable">
+                    <thead>
+                      <tr>
+                        <th>Outcome</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
               </section>
             </div>
           </section>
@@ -1202,6 +1301,22 @@
    
 
     
+    <!-- Admin Edit Data Warning Modal -->
+    <div class="modal-overlay hidden" id="adminEditWarningModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h2>⚠️ Enable Admin Data Edit</h2>
+          <button class="modal-close" id="adminEditModalClose">&#10005;</button>
+        </div>
+        <p>You are about to edit daily operational data for <strong id="adminEditModalCentreName"></strong> on <strong id="adminEditModalDate"></strong>.</p>
+        <p>This action will <strong>overwrite existing centre data</strong> and is <strong>permanently recorded in the audit log</strong>. Only proceed if the centre is unable to submit their own data.</p>
+        <div class="modal-actions">
+          <button class="button secondary" id="adminEditModalCancel">Cancel</button>
+          <button class="button primary danger" id="adminEditModalConfirm">I Understand — Enable Editing</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toast" id="toast"></div>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

@@ -1178,61 +1178,72 @@ select:focus, input:focus {
   margin: 0;
 }
 
-/* Outcome Split — single compact card, no scroll */
-.advice-breakdown-single {
-  display: block;
-  margin-top: 14px;
-}
-
-.advice-breakdown-single .advice-breakdown-card {
-  max-width: 360px;
-}
-
-/* Standalone mini table — not inheriting .data-table bloat */
-.advice-mini-table--inline {
-  width: 100%;
-  min-width: 0;
-  border-collapse: collapse;
-  font-size: .845rem;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.advice-mini-table--inline thead tr {
-  background: var(--surface);
-}
-
-.advice-mini-table--inline th {
-  padding: 8px 12px;
-  text-align: left;
-  font-size: .72rem;
-  font-weight: 600;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border-bottom: 1px solid var(--line);
-}
-
-.advice-mini-table--inline td {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-}
-
-.advice-mini-table--inline tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.advice-mini-table--inline th:last-child,
-.advice-mini-table--inline td:last-child {
+.advice-mini-table tbody td:last-child,
+.advice-mini-table thead th:last-child {
   text-align: right;
-  font-weight: 600;
-  color: var(--ink);
 }
 
-/* ─── Advice entry form ──────────────────────────────────────────────────── */
+/* ─── Admin Edit Data Tab ─────────────────────────────────────────────────── */
+.admin-edit-warning-banner {
+  background: #fffbeb;
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+
+.admin-edit-warning-inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.admin-edit-warning-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.admin-edit-warning-inner > div {
+  flex: 1;
+}
+
+.admin-edit-warning-inner strong {
+  display: block;
+  font-size: .9rem;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 4px;
+}
+
+.admin-edit-warning-inner p {
+  margin: 0;
+  font-size: .82rem;
+  color: #78350f;
+  line-height: 1.5;
+}
+
+.admin-edit-warning-inner .button {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* Locked state — blur/disable the form visually */
+.admin-edit-form-locked {
+  pointer-events: none;
+  opacity: 0.45;
+  user-select: none;
+}
+
+/* Danger button variant for the modal confirm */
+.button.danger {
+  background: #dc2626;
+  color: #fff;
+}
+.button.danger:hover {
+  background: #b91c1c;
+}
 .advice-entry-panel {
   display: block !important;
 }
