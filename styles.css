@@ -1244,7 +1244,8 @@ select:focus, input:focus {
 .button.danger:hover {
   background: #b91c1c;
 }
-.advice-entry-panel {
+/* Only show when centre-mode is active — don't override .centre-only for admins */
+body.centre-mode .advice-entry-panel {
   display: block !important;
 }
 
