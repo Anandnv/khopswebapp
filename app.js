@@ -1641,8 +1641,9 @@ function adviceStatusKey(entry) {
   if (status.includes("OTHER HOSPITAL") || status.includes("DONE ELSEWHERE")) return "done_elsewhere";
   if (status.includes("NOT DONE")) return "not_done";
   if (status.includes("2ND OPINION") || status.includes("SECOND OPINION")) return "second_opinion";
-  if (status.includes("ONLY MEDICATION") || advised === "MEDICATION") return "medication_only";
-  if (entry.procedureDate || status.includes("DONE HERE") || status.endsWith("DONE") || status === "DONE") return "done_here";
+  if (status.includes("MEDICATION ONLY") || status.includes("ONLY MEDICATION") || advised === "MEDICATION") return "medication_only";
+  if (entry.procedureDate || status.includes("DONE HERE") || status === "DONE") return "done_here";
+  if (status.includes("FOLLOW-UP") || status.includes("FOLLOW UP") || status.includes("PENDING")) return "pending";
   return "pending";
 }
 
@@ -1760,22 +1761,36 @@ function renderProcedureAdviceSummary(rows) {
 
 function renderProcedureAdviceBreakdowns(rows) {
   const metrics = adviceMetrics(rows);
-  const typeBody = document.querySelector("#adviceTypeTable tbody");
-  const outcomeBody = document.querySelector("#adviceOutcomeTable tbody");
-  if (typeBody) {
-    const items = Object.entries(metrics.procedureCounts)
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    typeBody.innerHTML = items.length
-      ? items.map(([label, count]) => `<tr><td>${escapeHtml(label)}</td><td>${count}</td></tr>`).join("")
-      : `<tr><td colspan="2">No advice rows for this filter.</td></tr>`;
-  }
-  if (outcomeBody) {
-    const items = Object.entries(metrics.outcomeCounts)
-      .map(([key, count]) => [adviceStatusLabel(key), count]);
-    outcomeBody.innerHTML = items
-      .map(([label, count]) => `<tr><td>${escapeHtml(label)}</td><td>${count}</td></tr>`)
-      .join("");
-  }
+  const container = document.getElementById("adviceOutcomeGrid");
+  if (!container) return;
+
+  const outcomeItems = [
+    { key: "done_here",       icon: "✅", color: "#2d7a52", bg: "#edf7f0" },
+    { key: "done_elsewhere",  icon: "🏥", color: "#1f4f82", bg: "#edf4fb" },
+    { key: "not_done",        icon: "❌", color: "#b54a4d", bg: "#fdf0f1" },
+    { key: "second_opinion",  icon: "🔄", color: "#b07a18", bg: "#fcf6e8" },
+    { key: "medication_only", icon: "💊", color: "#6b3fa0", bg: "#f3edff" },
+    { key: "pending",         icon: "⏳", color: "#5d6b7d", bg: "#eef2f7" }
+  ];
+
+  container.innerHTML = outcomeItems.map(({ key, icon, color, bg }) => {
+    const count = metrics.outcomeCounts[key] || 0;
+    const label = adviceStatusLabel(key);
+    const pct = metrics.total ? Math.round((count / metrics.total) * 100) : 0;
+    return `
+      <div class="outcome-card" style="border-left:4px solid ${color};background:${bg}">
+        <div class="outcome-card-top">
+          <span class="outcome-icon">${icon}</span>
+          <strong class="outcome-count" style="color:${color}">${count}</strong>
+        </div>
+        <div class="outcome-label">${label}</div>
+        <div class="outcome-bar-wrap">
+          <div class="outcome-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div class="outcome-pct" style="color:${color}">${pct}%</div>
+      </div>
+    `;
+  }).join("");
 }
 
 function renderProcedureAdviceTable(rows) {
