@@ -1178,9 +1178,58 @@ select:focus, input:focus {
   margin: 0;
 }
 
-.advice-mini-table tbody td:last-child,
-.advice-mini-table thead th:last-child {
+/* Outcome Split — single compact card, no scroll */
+.advice-breakdown-single {
+  display: block;
+  margin-top: 14px;
+}
+
+.advice-breakdown-single .advice-breakdown-card {
+  max-width: 360px;
+}
+
+/* Standalone mini table — not inheriting .data-table bloat */
+.advice-mini-table--inline {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  font-size: .845rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.advice-mini-table--inline thead tr {
+  background: var(--surface);
+}
+
+.advice-mini-table--inline th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+
+.advice-mini-table--inline td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.advice-mini-table--inline tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.advice-mini-table--inline th:last-child,
+.advice-mini-table--inline td:last-child {
   text-align: right;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 /* ─── Advice entry form ──────────────────────────────────────────────────── */

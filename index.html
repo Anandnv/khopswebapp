@@ -766,27 +766,7 @@
 
             <div class="petty-summary-grid" id="adviceSummaryGrid"></div>
 
-            <div class="advice-breakdown-grid">
-              <section class="panel advice-breakdown-card">
-                <div class="panel-head">
-                  <div>
-                    <h3>Advice Mix</h3>
-                    <p>Procedure types advised this month.</p>
-                  </div>
-                </div>
-                <div class="table-wrap">
-                  <table class="data-table compact advice-mini-table" id="adviceTypeTable">
-                    <thead>
-                      <tr>
-                        <th>Advice</th>
-                        <th>Count</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-              </section>
-
+            <div class="advice-breakdown-grid advice-breakdown-single">
               <section class="panel advice-breakdown-card">
                 <div class="panel-head">
                   <div>
@@ -794,17 +774,15 @@
                     <p>Quick status summary in simplified wording.</p>
                   </div>
                 </div>
-                <div class="table-wrap">
-                  <table class="data-table compact advice-mini-table" id="adviceOutcomeTable">
-                    <thead>
-                      <tr>
-                        <th>Outcome</th>
-                        <th>Count</th>
-                      </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
+                <table class="advice-mini-table advice-mini-table--inline" id="adviceOutcomeTable">
+                  <thead>
+                    <tr>
+                      <th>Outcome</th>
+                      <th>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
               </section>
             </div>
           </section>
