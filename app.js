@@ -1813,7 +1813,9 @@ function deletePettyEntry(entryId) {
   const entriesForCentre = ensurePettyCentre(loggedInCentreIndex);
   pettyCash.entries[loggedInCentreIndex] = entriesForCentre.filter((entry) => String(entry.id) !== String(entryId));
   if (String(pettyEditingId) === String(entryId)) resetPettyForm(false);
-  persistSoon();
+  saveConfig().catch((err) => {
+    console.error("adminSaveEntry config sync failed:", err);
+  });
   renderPettyCashForCentre();
   showToast("Petty entry deleted");
 }
@@ -7993,7 +7995,9 @@ async function adminSaveEntry() {
 
   const persisted = await persistEntry(centreIndex, date, { successMessage: "" });
   if (!persisted) return;
-  persistSoon();
+  saveConfig().catch((err) => {
+    console.error("adminSaveEntry config sync failed:", err);
+  });
   showToast(`✅ ${centre.name} data for ${displayDate(date)} saved by ${actorLabel}`);
 }
 
