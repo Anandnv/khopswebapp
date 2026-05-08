@@ -14,6 +14,7 @@ create table if not exists app_config (
   swizton_mapping jsonb not null default '{}',
   petty_cash    jsonb not null default '{}',
   procedure_advice jsonb not null default '{}',
+  monthly_targets jsonb not null default '{}',
   admins        jsonb not null default '[]',
   admin_audit_log jsonb not null default '[]',
   updated_at    timestamptz not null default now()
@@ -25,6 +26,7 @@ alter table app_config add column if not exists swizton_entries jsonb not null d
 alter table app_config add column if not exists swizton_mapping jsonb not null default '{}';
 alter table app_config add column if not exists petty_cash jsonb not null default '{}';
 alter table app_config add column if not exists procedure_advice jsonb not null default '{}';
+alter table app_config add column if not exists monthly_targets jsonb not null default '{}';
 
 -- ── 2. Daily entries ───────────────────────────────────────────────────────────
 -- One row per centre + date. op, referrals, procedures stored as JSONB.

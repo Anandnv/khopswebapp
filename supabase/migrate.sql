@@ -5,13 +5,28 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- ── 1. App config ─────────────────────────────────────────────────────────────
-insert into app_config (id, centers, procedures, petty_cash, procedure_advice, admins, admin_audit_log, updated_at)
+insert into app_config (
+  id,
+  centers,
+  procedures,
+  swizton_entries,
+  swizton_mapping,
+  petty_cash,
+  procedure_advice,
+  monthly_targets,
+  admins,
+  admin_audit_log,
+  updated_at
+)
 select
   'main',
   (state -> 'centers'),
   (state -> 'procedureSettings'),
+  coalesce((state -> 'swiztonEntries'), '[]'::jsonb),
+  coalesce((state -> 'swiztonMapping'), '{}'::jsonb),
   coalesce((state -> 'pettyCash'), '{}'::jsonb),
   coalesce((state -> 'procedureAdvice'), '{}'::jsonb),
+  coalesce((state -> 'monthlyTargets'), '{}'::jsonb),
   coalesce((state -> 'admins'), '[]'::jsonb),
   coalesce((state -> 'adminAuditLog'), '[]'::jsonb),
   now()
@@ -20,8 +35,11 @@ where id = 'main'
 on conflict (id) do update
   set centers    = excluded.centers,
       procedures = excluded.procedures,
+      swizton_entries = excluded.swizton_entries,
+      swizton_mapping = excluded.swizton_mapping,
       petty_cash = excluded.petty_cash,
       procedure_advice = excluded.procedure_advice,
+      monthly_targets = excluded.monthly_targets,
       admins = excluded.admins,
       admin_audit_log = excluded.admin_audit_log,
       updated_at = excluded.updated_at;
