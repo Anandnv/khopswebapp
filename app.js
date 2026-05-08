@@ -6197,7 +6197,16 @@ function resetAppStateToDefaults() {
 async function replaceLiveStateInSupabase() {
   if (!supabaseClient) return;
 
-  await saveConfig();
+  try {
+    await saveConfig();
+  } catch (err) {
+    const message = String(err?.message || err || "");
+    if (/procedure_advice|monthly_targets|petty_cash|swizton_mapping|swizton_entries|admins|admin_audit_log/i.test(message)) {
+      console.warn("Continuing restore with older app_config schema:", err);
+    } else {
+      throw err;
+    }
+  }
 
   const deleteResults = await Promise.all([
     supabaseClient.from("daily_entries").delete().gte("entry_date", "1900-01-01"),
