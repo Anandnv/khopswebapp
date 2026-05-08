@@ -653,9 +653,17 @@ select:focus, input:focus {
 
 .data-table tfoot td:first-child { background: #e6efe7; }
 
-.status-good  { background: #edf6ef !important; color: #1f5d3e; font-weight: 800; }
-.status-watch { background: #fbf5e8 !important; color: #8a6113; font-weight: 800; }
-.status-risk  { background: #fbefef !important; color: #8f3940; font-weight: 800; }
+.status-good,
+.status-watch,
+.status-risk {
+  font-weight: 900;
+  letter-spacing: .01em;
+  box-shadow: inset 3px 0 0 rgba(20,32,51,.12);
+}
+
+.status-good  { background: #edf6ef !important; color: var(--ink) !important; border-left: 3px solid #2d7a52; }
+.status-watch { background: #fbf5e8 !important; color: var(--ink) !important; border-left: 3px solid #b07a18; }
+.status-risk  { background: #fbefef !important; color: var(--ink) !important; border-left: 3px solid #b54a4d; }
 
 /* ─── Dashboard grid ─────────────────────────────────────────────────────── */
 .dashboard-grid {
