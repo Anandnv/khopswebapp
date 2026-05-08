@@ -3518,14 +3518,14 @@ if (currentRole === "admin") {
       </td>
       <td>${center.tillDate}</td>
       <td>${center.yesterday}</td>
-      <td>${totalFor(center)}</td>
+      <td class="${statusClass(percent)}">${totalFor(center)}</td>
       <td>${center.target}</td>
       <td>${center.cagToday}</td>
       <td>${center.cagTotal}</td>
       <td>${center.kasp}</td>
       <td>${center.general}</td>
       <td>${center.medisep}</td>
-      <td class="${statusClass(percent)}">${percent}</td>
+      <td>${percent}</td>
     `;
 
     row.addEventListener("click", () => {
@@ -3570,7 +3570,7 @@ if (currentRole === "admin") {
       <td>${totals.kasp}</td>
       <td>${totals.general}</td>
       <td>${totals.medisep}</td>
-      <td class="${statusClass(percent)}">${percent}</td>
+      <td>${percent}</td>
     </tr>
   `;
 
