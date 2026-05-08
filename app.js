@@ -36,6 +36,7 @@ let adminAuditLog = [];
 let admins = [];
 let swiztonEntries = [];
 let swiztonEditingId = null;
+let monthlyTargets = {};
 let pettyCash = { balances: {}, entries: {} };
 let pettyEditingId = null;
 let procedureAdvice = {};
@@ -114,11 +115,20 @@ function getMonthEndDate(dateStr) {
     timeZone: 'Asia/Kolkata'
   });
 }
-const monthStartDates = {
-  "2026-04": "2026-04-01",
-  "2026-03": "2026-03-01",
-  "2026-02": "2026-02-01"
-};
+
+function monthKey(value) {
+  return String(value || "").slice(0, 7);
+}
+
+function monthLabel(month) {
+  if (!month) return "";
+  const date = new Date(`${month}-01T00:00:00`);
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Kolkata"
+  });
+}
 
 // ─── Security helpers ────────────────────────────────────────────────────────
 
@@ -438,6 +448,7 @@ function revertAuditEntry(auditId) {
 function getAppState() {
   return {
     centers,
+    monthlyTargets,
     procedureSettings,
     swiztonEntries,
     swiztonConsolidatedMapping,
@@ -456,6 +467,9 @@ function getAppState() {
 function applyAppState(state) {
   if (!state) return false;
   if (Array.isArray(state.centers)) centers = state.centers;
+  if (state.monthlyTargets && typeof state.monthlyTargets === "object") {
+    monthlyTargets = normalizeMonthlyTargets(state.monthlyTargets);
+  }
   if (Array.isArray(state.procedureSettings)) procedureSettings = state.procedureSettings;
   if (Array.isArray(state.swiztonEntries)) swiztonEntries = state.swiztonEntries;
   if (state.swiztonConsolidatedMapping && typeof state.swiztonConsolidatedMapping === "object") {
@@ -471,6 +485,7 @@ function applyAppState(state) {
   if (state.procedureAdvice && typeof state.procedureAdvice === "object") {
     procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
   }
+  migrateLegacyTargets(state.reportDate);
   if (state.entries && typeof state.entries === "object") {
     Object.keys(entries).forEach((key) => delete entries[key]);
     Object.assign(entries, state.entries);
@@ -540,6 +555,9 @@ async function loadFromSupabase() {
   }
   if (cfg.procedure_advice && typeof cfg.procedure_advice === "object") {
     procedureAdvice = normalizeProcedureAdviceStore(cfg.procedure_advice);
+  }
+  if (cfg.monthly_targets && typeof cfg.monthly_targets === "object") {
+    monthlyTargets = normalizeMonthlyTargets(cfg.monthly_targets);
   }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
@@ -620,6 +638,7 @@ async function loadFromSupabase() {
     }));
   }
 
+  migrateLegacyTargets();
   // Default to yesterday — morning reports show previous day's data
   setReportDate(reportDate);
   return true;
@@ -651,6 +670,14 @@ function mergeLocalSupplementalState() {
     ) {
       procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
     }
+    if (
+      state.monthlyTargets &&
+      typeof state.monthlyTargets === "object" &&
+      !Object.keys(monthlyTargets || {}).length
+    ) {
+      monthlyTargets = normalizeMonthlyTargets(state.monthlyTargets);
+    }
+    migrateLegacyTargets(state.reportDate);
   } catch (err) {
     console.warn("Could not merge local supplemental state:", err);
   }
@@ -676,6 +703,9 @@ function loadFromLocalStorage() {
     if (state.procedureAdvice && typeof state.procedureAdvice === "object") {
       procedureAdvice = normalizeProcedureAdviceStore(state.procedureAdvice);
     }
+    if (state.monthlyTargets && typeof state.monthlyTargets === "object") {
+      monthlyTargets = normalizeMonthlyTargets(state.monthlyTargets);
+    }
     if (state.entries && typeof state.entries === "object") {
       Object.keys(entries).forEach(k => delete entries[k]);
       Object.assign(entries, state.entries);
@@ -688,6 +718,7 @@ function loadFromLocalStorage() {
     if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
     if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
     if (Array.isArray(state.admins)) admins = state.admins;
+    migrateLegacyTargets(state.reportDate);
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     setReportDate(today);
     return true;
@@ -762,6 +793,7 @@ async function saveConfig() {
     swizton_mapping: swiztonConsolidatedMapping,
     petty_cash: pettyCash,
     procedure_advice: procedureAdvice,
+    monthly_targets: monthlyTargets,
     admins,
     admin_audit_log: adminAuditLog,
     updated_at: new Date().toISOString()
@@ -772,7 +804,7 @@ async function saveConfig() {
     .upsert(payload);
 
   // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice/i.test(error.message || "")) {
+  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice|monthly_targets/i.test(error.message || "")) {
     const fallbackPayload = { ...payload };
     if (/admins|admin_audit_log/i.test(error.message || "")) {
       delete fallbackPayload.admins;
@@ -789,6 +821,9 @@ async function saveConfig() {
     }
     if (/procedure_advice/i.test(error.message || "")) {
       delete fallbackPayload.procedure_advice;
+    }
+    if (/monthly_targets/i.test(error.message || "")) {
+      delete fallbackPayload.monthly_targets;
     }
     ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
@@ -1042,12 +1077,12 @@ function displayDate(date) {
 
 function selectedMonthLabel() {
   const select = document.getElementById("monthSelect");
-  return select.options[select.selectedIndex].text;
+  return select?.options?.[select.selectedIndex]?.text || monthLabel(monthKey(reportDate));
 }
 
 function exportMonthLabel() {
   const select = document.getElementById("exportMonth");
-  return select.options[select.selectedIndex].text;
+  return select?.options?.[select.selectedIndex]?.text || monthLabel(monthKey(reportDate));
 }
 
 function escapeHtml(value) {
@@ -1266,6 +1301,116 @@ function normalizeProcedureAdviceStore(value = {}) {
     normalized[key] = Array.isArray(value[key]) ? value[key] : [];
   });
   return normalized;
+}
+
+function normalizeMonthlyTargets(value = {}) {
+  const normalized = {};
+  Object.keys(value || {}).forEach((month) => {
+    if (!value[month] || typeof value[month] !== "object") return;
+    normalized[month] = {};
+    Object.keys(value[month]).forEach((centreIndex) => {
+      normalized[month][centreIndex] = currencySafeNumber(value[month][centreIndex]);
+    });
+  });
+  return normalized;
+}
+
+function collectDataMonths() {
+  const months = new Set();
+
+  Object.values(entries).forEach((centreEntries) => {
+    Object.keys(centreEntries || {}).forEach((date) => {
+      if (monthKey(date)) months.add(monthKey(date));
+    });
+  });
+
+  Object.keys(monthlyTargets || {}).forEach((month) => {
+    if (monthKey(month)) months.add(monthKey(month));
+  });
+
+  Object.values(pettyCash?.balances || {}).forEach((balances) => {
+    Object.keys(balances || {}).forEach((month) => {
+      if (monthKey(month)) months.add(monthKey(month));
+    });
+  });
+
+  Object.values(pettyCash?.entries || {}).forEach((entriesForCentre) => {
+    (entriesForCentre || []).forEach((entry) => {
+      if (monthKey(entry.date)) months.add(monthKey(entry.date));
+    });
+  });
+
+  Object.values(procedureAdvice || {}).forEach((entriesForCentre) => {
+    (entriesForCentre || []).forEach((entry) => {
+      if (monthKey(entry.date)) months.add(monthKey(entry.date));
+    });
+  });
+
+  (swiztonEntries || []).forEach((entry) => {
+    if (monthKey(entry.month)) months.add(monthKey(entry.month));
+    if (monthKey(entry.campaignDate)) months.add(monthKey(entry.campaignDate));
+  });
+
+  return Array.from(months).sort((a, b) => b.localeCompare(a));
+}
+
+function availableMonths() {
+  const months = new Set(collectDataMonths());
+  months.add(todayIST().slice(0, 7));
+  if (monthKey(reportDate)) months.add(monthKey(reportDate));
+  return Array.from(months).sort((a, b) => b.localeCompare(a));
+}
+
+function inferredLegacyTargetMonth(preferredMonth = "") {
+  const knownMonths = collectDataMonths();
+  return knownMonths[0] || monthKey(preferredMonth) || todayIST().slice(0, 7);
+}
+
+function getCentreTargetForMonth(centreIndex, month = monthKey(reportDate)) {
+  return currencySafeNumber(monthlyTargets?.[month]?.[centreIndex]);
+}
+
+function setCentreTargetForMonth(centreIndex, month, amount) {
+  monthlyTargets = normalizeMonthlyTargets(monthlyTargets);
+  if (!monthlyTargets[month]) monthlyTargets[month] = {};
+  monthlyTargets[month][centreIndex] = currencySafeNumber(amount);
+}
+
+function syncCentreTargetsForMonth(month = monthKey(reportDate)) {
+  centers.forEach((center, index) => {
+    center.target = getCentreTargetForMonth(index, month);
+  });
+}
+
+function migrateLegacyTargets(preferredMonth = "") {
+  monthlyTargets = normalizeMonthlyTargets(monthlyTargets);
+  const targetMonth = inferredLegacyTargetMonth(preferredMonth);
+  const hasAnySavedMonthlyTarget = Object.values(monthlyTargets).some(
+    (monthTargets) => Object.keys(monthTargets || {}).length > 0
+  );
+  if (!hasAnySavedMonthlyTarget) {
+    centers.forEach((center, index) => {
+      const legacyTarget = currencySafeNumber(center.target);
+      if (legacyTarget > 0) setCentreTargetForMonth(index, targetMonth, legacyTarget);
+    });
+  }
+  syncCentreTargetsForMonth(monthKey(reportDate) || todayIST().slice(0, 7));
+}
+
+function populateMonthSelect(selectId, selectedMonth = monthKey(reportDate)) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const months = availableMonths();
+  const resolvedMonth = monthKey(selectedMonth) || months[0] || todayIST().slice(0, 7);
+  select.innerHTML = months
+    .map((month) => `<option value="${month}">${escapeHtml(monthLabel(month))}</option>`)
+    .join("");
+  select.value = months.includes(resolvedMonth) ? resolvedMonth : (months[0] || resolvedMonth);
+}
+
+function refreshMonthSelectors(selectedMonth = monthKey(reportDate)) {
+  populateMonthSelect("monthSelect", selectedMonth);
+  populateMonthSelect("exportMonth", document.getElementById("exportMonth")?.value || selectedMonth);
 }
 
 function ensurePettyCentre(centreIndex) {
@@ -2030,6 +2175,20 @@ function shiftProcedureAdviceAfterCenterRemoval(removedIndex) {
     if (oldIndex > removedIndex) shifted[oldIndex - 1] = procedureAdvice[key];
   });
   procedureAdvice = shifted;
+}
+
+function shiftMonthlyTargetsAfterCenterRemoval(removedIndex) {
+  const shifted = {};
+  Object.keys(monthlyTargets || {}).forEach((month) => {
+    const nextMonthTargets = {};
+    Object.keys(monthlyTargets[month] || {}).forEach((key) => {
+      const oldIndex = Number(key);
+      if (oldIndex < removedIndex) nextMonthTargets[oldIndex] = monthlyTargets[month][key];
+      if (oldIndex > removedIndex) nextMonthTargets[oldIndex - 1] = monthlyTargets[month][key];
+    });
+    shifted[month] = nextMonthTargets;
+  });
+  monthlyTargets = shifted;
 }
 
 function excelColumnName(index) {
@@ -2900,11 +3059,16 @@ function currencySafeNumber(value) {
 
 function setReportDate(date) {
   reportDate = date;
-  // Sync month selector
   const month = date.slice(0, 7);
+  syncCentreTargetsForMonth(month);
+  refreshMonthSelectors(month);
   const monthSelect = document.getElementById("monthSelect");
   if (monthSelect && monthSelect.value !== month) {
     monthSelect.value = month;
+  }
+  const exportMonth = document.getElementById("exportMonth");
+  if (exportMonth && exportMonth.value !== month) {
+    exportMonth.value = month;
   }
   // Sync the report date picker in topbar
   const rdInput = document.getElementById("reportDateInput");
@@ -3794,19 +3958,23 @@ function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentr
 function renderTargets() {
   const grid = document.getElementById("targetGrid");
   grid.innerHTML = "";
+  const activeMonth = monthKey(reportDate);
+  syncCentreTargetsForMonth(activeMonth);
   getCompanyScopedCentreIndexes().forEach((index) => {
     const center = centers[index];
     const card = document.createElement("div");
     card.className = "target-card";
     card.innerHTML = `
-      <div><strong>${center.name}</strong><span>April 2026 target</span></div>
-      <input type="number" min="0" value="${center.target}" aria-label="${center.name} target" />
+      <div><strong>${center.name}</strong><span>${escapeHtml(monthLabel(activeMonth))} target</span></div>
+      <input type="number" min="0" value="${getCentreTargetForMonth(index, activeMonth)}" aria-label="${center.name} target" />
     `;
     const input = card.querySelector("input");
     input.addEventListener("input", () => {
-      const oldTarget = center.target;
-      center.target = currencySafeNumber(input.value);
-      logTargetChange(center.name, oldTarget, center.target);
+      const oldTarget = getCentreTargetForMonth(index, activeMonth);
+      const newTarget = currencySafeNumber(input.value);
+      setCentreTargetForMonth(index, activeMonth, newTarget);
+      center.target = newTarget;
+      logTargetChange(center.name, oldTarget, newTarget);
       renderConsolidated();
       renderBars();
       renderAdminReportPreview();
@@ -4018,6 +4186,7 @@ function removeCenter(index) {
   Object.assign(entries, shifted);
   shiftPettyCashAfterCenterRemoval(index);
   shiftProcedureAdviceAfterCenterRemoval(index);
+  shiftMonthlyTargetsAfterCenterRemoval(index);
   loggedInCentreIndex = Math.min(loggedInCentreIndex, centers.length - 1);
   refreshCenterLists();
   renderTargets();
@@ -4166,6 +4335,7 @@ function setupMonthSelect() {
     renderConsolidated();
     renderBars();
     renderPayerSplit();
+    renderTargets();
     renderAdminReportPreview();
     const adminPettyMonth = document.getElementById("adminPettyMonth");
     if (adminPettyMonth) adminPettyMonth.value = selectedMonth;
@@ -4240,7 +4410,7 @@ function setupAdminControls() {
 }
 
 function syncExportDatesToMonth(month) {
-  document.getElementById("exportFromDate").value = monthStartDates[month] || month + "-01";
+  document.getElementById("exportFromDate").value = `${month}-01`;
   // Use the last known entry date for this month, not the hard month-end,
   // so the export range always matches what the consolidated table shows
   document.getElementById("exportToDate").value = lastEntryDateForMonth(month);
@@ -5601,6 +5771,7 @@ async function handleImportFile(event) {
   try {
     // Apply to memory
     centers           = backup.centers;
+    monthlyTargets    = normalizeMonthlyTargets(backup.monthlyTargets || {});
     procedureSettings = backup.procedureSettings;
     Object.keys(entries).forEach(k => delete entries[k]);
     Object.assign(entries, backup.entries || {});
@@ -5608,6 +5779,7 @@ async function handleImportFile(event) {
     Object.assign(entryMeta, backup.entryMeta || {});
     unlockRequests = backup.unlockRequests || [];
     auditLog       = backup.auditLog       || [];
+    migrateLegacyTargets(backup.reportDate);
 
     // Record the restore event in audit log
     auditLog.push({
@@ -6951,6 +7123,7 @@ async function init() {
       renderConsolidated();
       renderBars();
       renderPayerSplit();
+      renderTargets();
       renderAdminReportPreview();
     });
   }
@@ -6965,6 +7138,7 @@ async function init() {
 
   // Sync export date range to current month so To Date is never stale
   const currentMonth = today.slice(0, 7);
+  refreshMonthSelectors(monthKey(reportDate) || currentMonth);
   syncExportDatesToMonth(currentMonth);
   renderCompanyTabs();
   renderConsolidated();
