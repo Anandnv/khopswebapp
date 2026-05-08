@@ -786,21 +786,25 @@ async function saveAll() {
 
 // Targeted save called right after a centre submits daily entry
 async function persistEntry(centreIndex, date, options = {}) {
-  const { saveConfigToo = false } = options;
+  const { saveConfigToo = false, successMessage = "Data saved successfully" } = options;
   saveLocalBackup();
   if (!supabaseClient) {
     showToast("Saved locally (offline mode)");
     return true;
   }
   try {
-    const tasks = [
+    await Promise.all([
       saveOneEntry(centreIndex, date),
-      saveOneMeta(centreIndex, date),
-      saveLatestAuditEntry()
-    ];
-    if (saveConfigToo) tasks.push(saveConfig());
-    await Promise.all(tasks);
-    showToast("Data saved successfully");
+      saveOneMeta(centreIndex, date)
+    ]);
+
+    const followUpTasks = [saveLatestAuditEntry()];
+    if (saveConfigToo) followUpTasks.push(saveConfig());
+    Promise.all(followUpTasks).catch((err) => {
+      console.error("persistEntry follow-up failed:", err);
+    });
+
+    if (successMessage) showToast(successMessage);
     return true;
   } catch (err) {
     console.error("persistEntry failed:", err);
@@ -7987,8 +7991,9 @@ async function adminSaveEntry() {
   // Refresh the operations tab snapshot too
   openCentre(centreIndex, "editdata");
 
-  const persisted = await persistEntry(centreIndex, date, { saveConfigToo: true });
+  const persisted = await persistEntry(centreIndex, date, { successMessage: "" });
   if (!persisted) return;
+  persistSoon();
   showToast(`✅ ${centre.name} data for ${displayDate(date)} saved by ${actorLabel}`);
 }
 
