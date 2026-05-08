@@ -763,6 +763,7 @@ async function saveAll() {
   saveLocalBackup();
   if (!supabaseClient) { showToast("Saved locally (offline mode)"); return; }
 
+  let savedOk = false;
   try {
     await Promise.all([
       saveConfig(),
@@ -771,12 +772,14 @@ async function saveAll() {
       saveAllUnlockRequests(),
       saveAllAuditLog()
     ]);
+    savedOk = true;
     showToast("Data saved successfully");
   } catch (err) {
     console.error("saveAll failed:", err);
     showToast("Save failed due to a network issue");
   }
-  await createBackup();
+  if (!savedOk) return;
+  await createBackup({ silent: true });
   await cleanupBackups();
 }
 
@@ -6176,35 +6179,46 @@ function setPanelState(elementId, type, title, message) {
 }
 
 
-async function createBackup() {
+async function createBackup(options = {}) {
+  const { silent = false } = options;
   if (!supabaseClient) return;
-  setBackupStatus("loading", "Creating backup", "Saving the current live state to Supabase.");
+  if (!silent) {
+    setBackupStatus("loading", "Creating backup", "Saving the current live state to Supabase.");
+  }
 
   const data = getAppState();
 
   try {
     const createdBy = getCurrentActorLabel();
-    await supabaseClient
-  .from("app_backups")
-  .insert({
-    backup_data: data,
-    version: "1.0",
-    app_version: "KHOPS_v1",
-    created_by: createdBy,
-    created_at: new Date().toISOString()  
-  });
+    const { error } = await supabaseClient
+      .from("app_backups")
+      .insert({
+        backup_data: data,
+        version: "1.0",
+        app_version: "KHOPS_v1",
+        created_by: createdBy,
+        created_at: new Date().toISOString()
+      });
+
+    if (error) throw error;
 
     console.log("Backup created");
 
-    setBackupStatus(
-      "success",
-      "Backup created",
-      `Last backup saved ${new Date().toLocaleString()} by ${escapeHtml(createdBy)}.`
-    );
+    if (!silent) {
+      setBackupStatus(
+        "success",
+        "Backup created",
+        `Last backup saved ${new Date().toLocaleString()} by ${escapeHtml(createdBy)}.`
+      );
+    }
+    return true;
 
   } catch (err) {
     console.error("Backup failed", err);
-    setBackupStatus("error", "Backup failed", "Supabase could not save the snapshot right now.");
+    if (!silent) {
+      setBackupStatus("error", "Backup failed", "Supabase could not save the snapshot right now.");
+    }
+    return false;
   }
 }
 
@@ -7315,9 +7329,11 @@ async function ensureDailyBackup() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const lastBackupDate = localStorage.getItem("lastBackupDate");
   if (lastBackupDate !== today) {
-    await createBackup();
-    localStorage.setItem("lastBackupDate", today);
-    console.log("Daily backup created for", today);
+    const backedUp = await createBackup({ silent: true });
+    if (backedUp) {
+      localStorage.setItem("lastBackupDate", today);
+      console.log("Daily backup created for", today);
+    }
   }
 }
 
