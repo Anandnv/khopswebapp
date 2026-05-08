@@ -95,6 +95,12 @@ let swiztonConsolidatedMapping = {
 // These keys must always be manual (empty = no auto-source).
 // Call this after every state restore so saved mappings never override the intent.
 const SWIZTON_ALWAYS_MANUAL_KEYS = ["ufeTotalProcedures", "vericoseTotalProcedures"];
+const APP_VERSION = "1.0";
+const APP_BACKUP_VERSION = `KHOPS_v${APP_VERSION}`;
+const REPORT_TYPE_LABELS = {
+  consolidated: "Consolidated Summary",
+  daily: "Daily Detailed Report"
+};
 
 function enforceMandatoryMappings() {
   SWIZTON_ALWAYS_MANUAL_KEYS.forEach((key) => {
@@ -128,6 +134,10 @@ function monthLabel(month) {
     year: "numeric",
     timeZone: "Asia/Kolkata"
   });
+}
+
+function reportTypeLabel(type) {
+  return REPORT_TYPE_LABELS[type] || REPORT_TYPE_LABELS.consolidated;
 }
 
 // ─── Security helpers ────────────────────────────────────────────────────────
@@ -777,7 +787,7 @@ async function saveAll() {
     showToast("Data saved successfully");
   } catch (err) {
     console.error("saveAll failed:", err);
-    showToast("Save failed due to a network issue");
+    showToast("Cloud sync failed. Your latest local copy is still safe.");
   }
   if (!savedOk) return;
   await createBackup({ silent: true });
@@ -808,7 +818,7 @@ async function persistEntry(centreIndex, date, options = {}) {
     return true;
   } catch (err) {
     console.error("persistEntry failed:", err);
-    showToast("Save failed. Check your connection");
+    showToast("Could not save to the cloud. Check your connection and try again.");
     return false;
   }
 }
@@ -3641,13 +3651,13 @@ function showView(name) {
     advice: "Procedure Advice",
     targets: "Monthly Targets",
     procedures: "Procedure Settings",
-    users: "User Controls",
+    users: "User Management",
     centre: "Centre Dashboard",
     petty: "Petty Cash",
-    unlock: "Edit Requests",
+    unlock: "Edit Approvals",
     audit: "Audit Log",
-    backup: "Backup & Restore",
-    superadmin: "Super Admin Panel"
+    backup: "Backup & Recovery",
+    superadmin: "Administration"
   };
   document.getElementById("pageTitle").textContent = titles[name] || titles.admin;
   updateTopbarActions(name);
@@ -3997,7 +4007,7 @@ function renderEntryList(id, metrics, source = "op", centerIndex = loggedInCentr
   container.innerHTML = `
     <div class="entry-row header">
       <span>Item</span>
-      <span>Till Yesterday</span>
+      <span>Up To Yesterday</span>
       <span>Today</span>
       <span>Total</span>
     </div>
@@ -4615,7 +4625,7 @@ function consolidatedRowsToCsv(rows) {
   const header = [
     "Centre",
     "Target",
-    "Till Yesterday",
+    "Up To Yesterday",
     "Today",
     "Total",
     "%",
@@ -4764,16 +4774,16 @@ function procedureBreakdownRowsToCsv(rows) {
   const totals = procedureBreakdownTotals(rows);
   const header = [
     "Procedure",
-    "General Till Yesterday",
+    "General Up To Yesterday",
     "General Today",
     "General Total",
-    "KASP Till Yesterday",
+    "KASP Up To Yesterday",
     "KASP Today",
     "KASP Total",
-    "MEDISEP Till Yesterday",
+    "MEDISEP Up To Yesterday",
     "MEDISEP Today",
     "MEDISEP Total",
-    "Till Yesterday",
+    "Up To Yesterday",
     "Today",
     "Grand Total"
   ];
@@ -4862,7 +4872,7 @@ function downloadFilteredCsvReport() {
   const range = getExportRange();
   const forecast = reportForecast(filteredDailyRows());
   const csv = [
-    `KH ${isDaily ? "Daily Wise Detail" : "Consolidated Summary"} Report`,
+    `KH ${reportTypeLabel(isDaily ? "daily" : "consolidated")} Report`,
     `Centre,${csvEscape(document.getElementById("exportCentre").selectedOptions[0].textContent)}`,
     `From,${displayDate(range.fromDate)}`,
     `To,${displayDate(range.toDate)}`,
@@ -4871,11 +4881,11 @@ function downloadFilteredCsvReport() {
     "",
     isDaily ? filteredRowsToCsv(rows) : consolidatedRowsToCsv(rows),
     "",
-    "Procedure Wise Entries",
+    "Procedure Breakdown",
     procedureBreakdownRowsToCsv(procedureRows)
   ].join("\n");
   downloadBlob(csv, `kh-${isDaily ? "daily" : "consolidated"}-report-${range.fromDate}-to-${range.toDate}.csv`, "text/csv;charset=utf-8");
-  showToast("Filtered CSV downloaded");
+  showToast("Report downloaded");
 }
 
 function downloadBlob(content, filename, type) {
@@ -5138,7 +5148,7 @@ function professionalReportHtml() {
   `;
   const tableSection = isDaily ? `
     <section>
-      <h2>Daily Wise Detailed Data</h2>
+      <h2>Daily Detailed Report</h2>
       <table>
         <thead><tr><th>Date</th><th>Centre</th><th>Intervention</th><th>CAG</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP</th><!-- <th>IP</th> --><th>New OP</th><th>ECG</th><th>Echo</th><th>TMT</th></tr></thead>
         <tbody>${dailyTableRows ? `${dailyTableRows}${dailyTotalRow}` : `<tr><td colspan="12">No saved data for selected filters.</td></tr>`}</tbody>
@@ -5148,16 +5158,16 @@ function professionalReportHtml() {
     <section>
       <h2>Consolidated Summary</h2>
       <table>
-        <thead><tr><th>Centre</th><th>Target</th><th>Till Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><!-- <th>IP Total</th> --></tr></thead>
+        <thead><tr><th>Centre</th><th>Target</th><th>Up To Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><!-- <th>IP Total</th> --></tr></thead>
         <tbody>${consolidatedTableRows ? `${consolidatedTableRows}${consolidatedTotalRow}` : `<tr><td colspan="12">No saved data for selected filters.</td></tr>`}</tbody>
       </table>
     </section>
   `;
   const procedureSection = `
     <section class="page-break">
-      <h2>Procedure Wise Entries</h2>
+      <h2>Procedure Breakdown</h2>
       <table>
-        <thead><tr><th>Procedure</th><th>General Till Yesterday</th><th>General Today</th><th>General Total</th><th>KASP Till Yesterday</th><th>KASP Today</th><th>KASP Total</th><th>MEDISEP Till Yesterday</th><th>MEDISEP Today</th><th>MEDISEP Total</th><th>Till Yesterday</th><th>Today</th><th>Grand Total</th></tr></thead>
+        <thead><tr><th>Procedure</th><th>General Up To Yesterday</th><th>General Today</th><th>General Total</th><th>KASP Up To Yesterday</th><th>KASP Today</th><th>KASP Total</th><th>MEDISEP Up To Yesterday</th><th>MEDISEP Today</th><th>MEDISEP Total</th><th>Up To Yesterday</th><th>Today</th><th>Grand Total</th></tr></thead>
         <tbody>${procedureTableRows ? `${procedureTableRows}${procedureTotalRow}` : `<tr><td colspan="13">No saved procedure data for selected filters.</td></tr>`}</tbody>
       </table>
     </section>
@@ -5193,7 +5203,7 @@ function professionalReportHtml() {
   <main>
     <header>
       <h1>KH Operations Report</h1>
-      <p>${escapeHtml(centreName)} | ${isDaily ? "Daily Wise Detail" : "Consolidated Summary"} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}</p>
+      <p>${escapeHtml(centreName)} | ${reportTypeLabel(isDaily ? "daily" : "consolidated")} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}</p>
     </header>
     <div class="grid">
       <div class="card"><span>Intervention</span><strong>${totals.intervention}</strong></div>
@@ -5351,7 +5361,7 @@ function downloadImageReport(format) {
   const forecast = reportForecast(rows);
   const range = getExportRange();
   const centreName = document.getElementById("exportCentre").selectedOptions[0].textContent;
-  const reportTypeLabel = selectedReportType() === "daily" ? "Daily Wise Detail" : "Consolidated Summary";
+  const currentReportTypeLabel = reportTypeLabel(selectedReportType());
   const canvas = document.createElement("canvas");
   canvas.width = 1400;
   canvas.height = 1000;
@@ -5365,7 +5375,7 @@ function downloadImageReport(format) {
   ctx.font = "700 42px Arial";
   ctx.fillText("KH Operations Report", 90, 115);
   ctx.font = "400 24px Arial";
-  ctx.fillText(`${centreName} | ${reportTypeLabel} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}`, 90, 160);
+  ctx.fillText(`${centreName} | ${currentReportTypeLabel} | ${displayDate(range.fromDate)} to ${displayDate(range.toDate)}`, 90, 160);
 
   const cards = [
     ["Intervention", totals.intervention],
@@ -5482,7 +5492,7 @@ function downloadSelectedMonthReport() {
     "",
     tableToCsv("OP & Diagnostics Consolidated", "opsConsolidatedTable"),
     "",
-    "Procedure Wise Entries",
+    "Procedure Breakdown",
     procedureBreakdownRowsToCsv(procedureRows)
   ].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -5957,7 +5967,7 @@ function exportToFile() {
   const backup = {
     exportedAt: new Date().toISOString(),
     exportedBy: getCurrentActorLabel(),
-    appVersion: "KHOPS_v2",
+    appVersion: APP_BACKUP_VERSION,
     ...getAppState()
   };
   const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -5981,7 +5991,7 @@ async function downloadBackupFromSupabase(backupId) {
   const payload = {
     exportedAt:  data.created_at,
     exportedBy:  "Supabase backup",
-    appVersion:  "KHOPS_v2",
+    appVersion:  APP_BACKUP_VERSION,
     ...data.backup_data
   };
   downloadBlob(JSON.stringify(payload, null, 2), `kh-backup-supabase-${date}.json`, "application/json");
@@ -6242,8 +6252,8 @@ async function createBackup(options = {}) {
       .from("app_backups")
       .insert({
         backup_data: data,
-        version: "1.0",
-        app_version: "KHOPS_v1",
+        version: APP_VERSION,
+        app_version: APP_BACKUP_VERSION,
         created_by: createdBy,
         created_at: new Date().toISOString()
       });

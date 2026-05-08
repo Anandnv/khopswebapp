@@ -120,7 +120,7 @@
               <option value="">Select month</option>
             </select>
             <div class="export-menu">
-              <button class="button secondary export-menu-button" type="button">Export Report</button>
+              <button class="button secondary export-menu-button" type="button">Export</button>
               <div class="export-dropdown hidden">
                 <button type="button" data-export-format="pdf">PDF</button>
                 <button type="button" data-export-format="csv">CSV / Excel</button>
@@ -171,7 +171,7 @@
               </div>
               <div class="report-actions">
                 <div class="export-menu">
-                  <button class="button primary export-menu-button" type="button">Export Report</button>
+                  <button class="button primary export-menu-button" type="button">Export</button>
                   <div class="export-dropdown hidden">
                     <button type="button" data-export-format="pdf">PDF</button>
                     <button type="button" data-export-format="csv">CSV / Excel</button>
@@ -190,7 +190,7 @@
                 <span>Report Type</span>
                 <select id="exportReportType">
                   <option value="consolidated">Consolidated Summary</option>
-                  <option value="daily">Daily Wise Detail</option>
+                  <option value="daily">Daily Detailed Report</option>
                 </select>
               </label>
               <label>
@@ -367,7 +367,7 @@
                 <thead>
                   <tr>
                     <th>Centre</th>
-                    <th>Till Yesterday</th>
+                    <th>Up To Yesterday</th>
                     <th>Today</th>
                     <th>Total</th>
                     <th>Target</th>
@@ -398,22 +398,22 @@
                 <thead>
                   <tr>
                     <th>Centre</th>
-                    <th>OP Till Yesterday</th>
+                    <th>OP Up To Yesterday</th>
                     <th>OP Today</th>
                     <th>OP Total</th>
-                    <!-- <th>IP Till Yesterday</th>
+                    <!-- <th>IP Up To Yesterday</th>
                     <th>IP Today</th>
                     <th>IP Total</th> -->
-                    <th>New OP Till Yesterday</th>
+                    <th>New OP Up To Yesterday</th>
                     <th>New OP Today</th>
                     <th>New OP Total</th>
-                    <th>ECG Till Yesterday</th>
+                    <th>ECG Up To Yesterday</th>
                     <th>ECG Today</th>
                     <th>ECG Total</th>
-                    <th>Echo Till Yesterday</th>
+                    <th>Echo Up To Yesterday</th>
                     <th>Echo Today</th>
                     <th>Echo Total</th>
-                    <th>TMT Till Yesterday</th>
+                    <th>TMT Up To Yesterday</th>
                     <th>TMT Today</th>
                     <th>TMT Total</th>
                   </tr>
@@ -445,12 +445,12 @@
         </section>
 
         <section id="centreView" class="view">
-          <button class="text-button" id="backToAdmin">Back to consolidated</button>
+          <button class="text-button" id="backToAdmin">Back to Network Dashboard</button>
           <div class="centre-hero">
             <div>
               <span class="eyebrow">Centre dashboard</span>
               <h2 id="centreName">Tirur</h2>
-              <p>Today, till yesterday, total procedure movement, OP diagnostics, and payer analytics.</p>
+              <p>Daily performance, payer mix, diagnostics, and procedure trends for this centre.</p>
             </div>
             <div class="hero-stats">
               <div><span>Target</span><strong id="centreTarget">0</strong></div>
@@ -462,7 +462,7 @@
           <div class="centre-detail-tabs">
             <button class="centre-detail-tab active" type="button" data-centre-detail="operations">Operations</button>
             <button class="centre-detail-tab" type="button" data-centre-detail="petty">Petty Cash</button>
-            <button class="centre-detail-tab admin-only" type="button" data-centre-detail="editdata">✏️ Edit Data</button>
+            <button class="centre-detail-tab admin-only" type="button" data-centre-detail="editdata">Edit Centre Data</button>
           </div>
 
           <div class="centre-detail-pane active" id="centreOperationsDetail">
@@ -481,7 +481,7 @@
               <div class="panel-head">
                 <div>
                   <h2>Procedure Details</h2>
-                  <p>Till yesterday is calculated automatically from previous entries.</p>
+                  <p>Up to yesterday is calculated automatically from previous entries.</p>
                 </div>
               </div>
               <div class="table-wrap">
@@ -495,16 +495,16 @@
                       <th colspan="3">Total</th>
                     </tr>
                     <tr>
-                      <th>General Till Yesterday</th>
+                      <th>General Up To Yesterday</th>
                       <th>General Today</th>
                       <th>General Total</th>
-                      <th>KASP Till Yesterday</th>
+                      <th>KASP Up To Yesterday</th>
                       <th>KASP Today</th>
                       <th>KASP Total</th>
-                      <th>MEDISEP Till Yesterday</th>
+                      <th>MEDISEP Up To Yesterday</th>
                       <th>MEDISEP Today</th>
                       <th>MEDISEP Total</th>
-                      <th>Total Till Yesterday</th>
+                      <th>Total Up To Yesterday</th>
                       <th>Total Today</th>
                       <th>Grand Total</th>
                     </tr>
@@ -555,8 +555,8 @@
               <div class="admin-edit-warning-inner">
                 <span class="admin-edit-warning-icon">⚠️</span>
                 <div>
-                  <strong>Admin Data Edit Mode</strong>
-                  <p>You are editing daily data on behalf of <span id="adminEditCentreName"></span>. Changes will be saved immediately and reflected in all reports. This action is logged in the audit trail.</p>
+                  <strong>Admin Editing Mode</strong>
+                  <p>You are editing daily data on behalf of <span id="adminEditCentreName"></span>. Changes are reflected across reports and recorded in the audit trail.</p>
                 </div>
                 <button class="button secondary" id="adminEditEnableBtn">Enable Editing</button>
               </div>
@@ -566,7 +566,7 @@
               <div class="panel-head">
                 <div>
                   <h2>Edit Centre Daily Data</h2>
-                  <p>Select a date and edit the daily entry for this centre. All changes are audit-logged.</p>
+                  <p>Select a date and update the saved daily entry for this centre. All changes are recorded in the audit trail.</p>
                 </div>
                 <div class="form-actions">
                   <input id="adminEditDate" type="date" aria-label="Edit date" />
@@ -590,7 +590,7 @@
             </section>
 
             <section class="panel" id="adminEditProcedurePanel">
-              <div class="panel-head"><h2>Procedure Entry</h2></div>
+              <div class="panel-head"><h2>Procedure Breakdown</h2></div>
               <div class="table-wrap">
                 <table class="data-table compact entry-table" id="adminProcedureEntryTable">
                   <thead>
@@ -602,16 +602,16 @@
                       <th colspan="3">Total</th>
                     </tr>
                     <tr>
-                      <th>General Till Yesterday</th>
+                      <th>General Up To Yesterday</th>
                       <th>General Today</th>
                       <th>General Total</th>
-                      <th>KASP Till Yesterday</th>
+                      <th>KASP Up To Yesterday</th>
                       <th>KASP Today</th>
                       <th>KASP Total</th>
-                      <th>MEDISEP Till Yesterday</th>
+                      <th>MEDISEP Up To Yesterday</th>
                       <th>MEDISEP Today</th>
                       <th>MEDISEP Total</th>
-                      <th>Total Till Yesterday</th>
+                      <th>Total Up To Yesterday</th>
                       <th>Total Today</th>
                       <th>Grand Total</th>
                     </tr>
@@ -620,7 +620,7 @@
                 </table>
               </div>
               <div class="form-actions" style="margin-top:16px;justify-content:flex-end">
-                <button class="button primary hidden" id="adminEditSaveBtn" type="button">💾 Save Changes</button>
+                <button class="button primary hidden" id="adminEditSaveBtn" type="button">Save Changes</button>
               </div>
             </section>
           </div>
@@ -639,7 +639,7 @@
             <div class="panel-head">
               <div>
                 <h2>Daily Centre Entry</h2>
-                <p>Centre staff enter current day values only. Till yesterday and totals are calculated by the app.</p>
+                <p>Centre staff enter current day values only. Up to yesterday and total values are calculated automatically.</p>
               </div>
               <div class="form-actions">
                 <div class="locked-centre">
@@ -680,16 +680,16 @@
                     <th colspan="3">Total</th>
                   </tr>
                   <tr>
-                    <th>General Till Yesterday</th>
+                    <th>General Up To Yesterday</th>
                     <th>General Today</th>
                     <th>General Total</th>
-                    <th>KASP Till Yesterday</th>
+                    <th>KASP Up To Yesterday</th>
                     <th>KASP Today</th>
                     <th>KASP Total</th>
-                    <th>MEDISEP Till Yesterday</th>
+                    <th>MEDISEP Up To Yesterday</th>
                     <th>MEDISEP Today</th>
                     <th>MEDISEP Total</th>
-                    <th>Total Till Yesterday</th>
+                    <th>Total Up To Yesterday</th>
                     <th>Total Today</th>
                     <th>Grand Total</th>
                   </tr>
