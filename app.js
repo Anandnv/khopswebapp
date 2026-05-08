@@ -466,6 +466,7 @@ function getAppState() {
 
 function applyAppState(state) {
   if (!state) return false;
+  resetAppStateToDefaults();
   if (Array.isArray(state.centers)) centers = state.centers;
   if (state.monthlyTargets && typeof state.monthlyTargets === "object") {
     monthlyTargets = normalizeMonthlyTargets(state.monthlyTargets);
@@ -499,7 +500,7 @@ function applyAppState(state) {
   if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
   if (Array.isArray(state.admins)) admins = state.admins;
   // Default to yesterday — morning reports show previous day's data
-  setReportDate(reportDate);
+  setReportDate(state.reportDate || reportDate);
   return true;
 }
 
@@ -5948,17 +5949,10 @@ async function migrateLegacyPasswords() {
 
 function exportToFile() {
   const backup = {
-    exportedAt:        new Date().toISOString(),
-    exportedBy:        currentRole === "admin" ? "Admin" : (centers[loggedInCentreIndex]?.name || "unknown"),
-    appVersion:        "KHOPS_v2",
-    centers,
-    procedureSettings,
-    swiztonEntries,
-    swiztonConsolidatedMapping,
-    entries,
-    entryMeta,
-    unlockRequests,
-    auditLog
+    exportedAt: new Date().toISOString(),
+    exportedBy: getCurrentActorLabel(),
+    appVersion: "KHOPS_v2",
+    ...getAppState()
   };
   const date = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   downloadBlob(JSON.stringify(backup, null, 2), `kh-backup-${date}.json`, "application/json");
@@ -6033,17 +6027,7 @@ async function handleImportFile(event) {
   setImportStatus("loading", "Restoring backup. Please wait and keep this tab open.");
 
   try {
-    // Apply to memory
-    centers           = backup.centers;
-    monthlyTargets    = normalizeMonthlyTargets(backup.monthlyTargets || {});
-    procedureSettings = backup.procedureSettings;
-    Object.keys(entries).forEach(k => delete entries[k]);
-    Object.assign(entries, backup.entries || {});
-    Object.keys(entryMeta).forEach(k => delete entryMeta[k]);
-    Object.assign(entryMeta, backup.entryMeta || {});
-    unlockRequests = backup.unlockRequests || [];
-    auditLog       = backup.auditLog       || [];
-    migrateLegacyTargets(backup.reportDate);
+    applyAppState(backup);
 
     // Record the restore event in audit log
     auditLog.push({
@@ -6060,19 +6044,13 @@ async function handleImportFile(event) {
 
     // Push to Supabase
     if (supabaseClient) {
-      await Promise.all([
-        saveConfig(),
-        saveAllEntries(),
-        saveAllMeta(),
-        saveAllUnlockRequests(),
-        saveAllAuditLog()
-      ]);
+      await replaceLiveStateInSupabase();
     }
     saveLocalBackup();
 
     // Re-render entire app
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    setReportDate(today);
+    const restoredReportDate = backup.reportDate || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    setReportDate(restoredReportDate);
     refreshCenterRollups(reportDate);
     refreshCenterLists();
     renderConsolidated();
@@ -6176,6 +6154,61 @@ function setPanelState(elementId, type, title, message) {
   const el = document.getElementById(elementId);
   if (!el) return;
   el.innerHTML = backupStateMarkup(type, title, message);
+}
+
+function resetAppStateToDefaults() {
+  centers = JSON.parse(JSON.stringify(DEFAULT_CENTERS));
+  monthlyTargets = {};
+  procedureSettings = JSON.parse(JSON.stringify(DEFAULT_PROCEDURE_SETTINGS));
+  swiztonEntries = [];
+  swiztonConsolidatedMapping = {
+    ufeLeadsGenerated: "ufeLeadsGenerated",
+    vericoseLeadsGenerated: "vericoseLeadsGenerated",
+    ufeOpGenerated: "ufeOpSeen",
+    vericoseOpGenerated: "vericoseOpSeen",
+    ufeAdvices: "ufeAdvices",
+    vericoseAdvices: "vericoseAdvices",
+    ufeDigitalProcedures: "ufeProcedureDone",
+    vericoseDigitalProcedures: "vericoseProcedureDone",
+    ufeTotalProcedures: "",
+    vericoseTotalProcedures: ""
+  };
+  pettyCash = { balances: {}, entries: {} };
+  procedureAdvice = {};
+  Object.keys(entries).forEach((key) => delete entries[key]);
+  Object.keys(entryMeta).forEach((key) => delete entryMeta[key]);
+  unlockRequests = [];
+  auditLog = [];
+  adminAuditLog = [];
+  admins = [];
+  reportDate = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  })();
+}
+
+async function replaceLiveStateInSupabase() {
+  if (!supabaseClient) return;
+
+  await saveConfig();
+
+  const deleteResults = await Promise.all([
+    supabaseClient.from("daily_entries").delete().gte("entry_date", "1900-01-01"),
+    supabaseClient.from("entry_meta").delete().gte("entry_date", "1900-01-01"),
+    supabaseClient.from("unlock_requests").delete().gte("entry_date", "1900-01-01"),
+    supabaseClient.from("audit_log").delete().gte("entry_date", "1900-01-01")
+  ]);
+  deleteResults.forEach((result) => {
+    if (result?.error) throw result.error;
+  });
+
+  await Promise.all([
+    saveAllEntries(),
+    saveAllMeta(),
+    saveAllUnlockRequests(),
+    saveAllAuditLog()
+  ]);
 }
 
 
@@ -7177,10 +7210,28 @@ async function restoreSelectedCentre() {
   restoredCentre.name = centreName;
   centers[currentCentreIndex] = restoredCentre;
   procedureAdvice[currentCentreIndex] = deepCloneValue(backupState.procedureAdvice?.[backupCentreIndex], []);
+  ensurePettyCentre(currentCentreIndex);
+  pettyCash.balances[currentCentreIndex] = deepCloneValue(backupState.pettyCash?.balances?.[backupCentreIndex], {});
+  pettyCash.entries[currentCentreIndex] = deepCloneValue(backupState.pettyCash?.entries?.[backupCentreIndex], []);
+
+  Object.keys(monthlyTargets || {}).forEach((month) => {
+    if (monthlyTargets[month]) delete monthlyTargets[month][currentCentreIndex];
+  });
+  Object.keys(backupState.monthlyTargets || {}).forEach((month) => {
+    const restoredTarget = backupState.monthlyTargets?.[month]?.[backupCentreIndex];
+    if (restoredTarget !== undefined) setCentreTargetForMonth(currentCentreIndex, month, restoredTarget);
+  });
 
   entries[currentCentreIndex] = deepCloneValue(backupState.entries?.[backupCentreIndex], {});
   if (entryMeta[currentCentreIndex]) delete entryMeta[currentCentreIndex];
   entryMeta[currentCentreIndex] = deepCloneValue(backupState.entryMeta?.[backupCentreIndex], {});
+
+  swiztonEntries = [
+    ...swiztonEntries.filter((entry) => normalizeWhitespace(entry.centre) !== normalizeWhitespace(centreName)),
+    ...(backupState.swiztonEntries || [])
+      .filter((entry) => normalizeWhitespace(entry.centre) === normalizeWhitespace(centreName))
+      .map((entry) => deepCloneValue(entry, {}))
+  ];
 
   unlockRequests = [
     ...unlockRequests.filter((record) => Number(record.centreIndex) !== Number(currentCentreIndex)),
@@ -7262,7 +7313,8 @@ async function restoreBackup(backupId) {
   applyAppState(state);
 
   try {
-    await saveAll();
+    await replaceLiveStateInSupabase();
+    saveLocalBackup();
 
     setBackupStatus("success", `Backup #${backupId} restored`, "The full live state has been replaced successfully. Reloading now.");
     showToast("Backup restored");
