@@ -4636,6 +4636,144 @@ function consolidatedRowsToCsv(rows) {
   return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
+function procedureBreakdownRows() {
+  const { fromDate, toDate } = getExportRange();
+  const selectedCenters = getFilteredCenterIndexes();
+  const previousDates = {};
+
+  selectedCenters.forEach((centerIndex) => {
+    previousDates[centerIndex] = datesBetween(centerIndex, fromDate, toDate).filter((date) => date < toDate);
+  });
+
+  return activeProcedures().map((procedure) => {
+    const totals = {
+      procedure,
+      generalTillYesterday: 0,
+      generalToday: 0,
+      generalTotal: 0,
+      kaspTillYesterday: 0,
+      kaspToday: 0,
+      kaspTotal: 0,
+      medisepTillYesterday: 0,
+      medisepToday: 0,
+      medisepTotal: 0,
+      tillYesterday: 0,
+      today: 0,
+      grandTotal: 0
+    };
+
+    selectedCenters.forEach((centerIndex) => {
+      previousDates[centerIndex].forEach((date) => {
+        const entry = entries[centerIndex]?.[date];
+        if (!entry) return;
+        totals.generalTillYesterday += getProcedure(entry, procedure, "general");
+        totals.kaspTillYesterday += getProcedure(entry, procedure, "kasp");
+        totals.medisepTillYesterday += getProcedure(entry, procedure, "medisep");
+      });
+
+      const todayEntry = entries[centerIndex]?.[toDate];
+      if (todayEntry) {
+        totals.generalToday += getProcedure(todayEntry, procedure, "general");
+        totals.kaspToday += getProcedure(todayEntry, procedure, "kasp");
+        totals.medisepToday += getProcedure(todayEntry, procedure, "medisep");
+      }
+    });
+
+    totals.generalTotal = totals.generalTillYesterday + totals.generalToday;
+    totals.kaspTotal = totals.kaspTillYesterday + totals.kaspToday;
+    totals.medisepTotal = totals.medisepTillYesterday + totals.medisepToday;
+    totals.tillYesterday = totals.generalTillYesterday + totals.kaspTillYesterday + totals.medisepTillYesterday;
+    totals.today = totals.generalToday + totals.kaspToday + totals.medisepToday;
+    totals.grandTotal = totals.generalTotal + totals.kaspTotal + totals.medisepTotal;
+    return totals;
+  });
+}
+
+function procedureBreakdownTotals(rows) {
+  return rows.reduce((totals, row) => {
+    [
+      "generalTillYesterday",
+      "generalToday",
+      "generalTotal",
+      "kaspTillYesterday",
+      "kaspToday",
+      "kaspTotal",
+      "medisepTillYesterday",
+      "medisepToday",
+      "medisepTotal",
+      "tillYesterday",
+      "today",
+      "grandTotal"
+    ].forEach((key) => {
+      totals[key] += row[key] || 0;
+    });
+    return totals;
+  }, {
+    generalTillYesterday: 0,
+    generalToday: 0,
+    generalTotal: 0,
+    kaspTillYesterday: 0,
+    kaspToday: 0,
+    kaspTotal: 0,
+    medisepTillYesterday: 0,
+    medisepToday: 0,
+    medisepTotal: 0,
+    tillYesterday: 0,
+    today: 0,
+    grandTotal: 0
+  });
+}
+
+function procedureBreakdownRowsToCsv(rows) {
+  const totals = procedureBreakdownTotals(rows);
+  const header = [
+    "Procedure",
+    "General Till Yesterday",
+    "General Today",
+    "General Total",
+    "KASP Till Yesterday",
+    "KASP Today",
+    "KASP Total",
+    "MEDISEP Till Yesterday",
+    "MEDISEP Today",
+    "MEDISEP Total",
+    "Till Yesterday",
+    "Today",
+    "Grand Total"
+  ];
+  const body = rows.map((row) => [
+    row.procedure,
+    row.generalTillYesterday,
+    row.generalToday,
+    row.generalTotal,
+    row.kaspTillYesterday,
+    row.kaspToday,
+    row.kaspTotal,
+    row.medisepTillYesterday,
+    row.medisepToday,
+    row.medisepTotal,
+    row.tillYesterday,
+    row.today,
+    row.grandTotal
+  ]);
+  const totalRow = [
+    "TOTAL",
+    totals.generalTillYesterday,
+    totals.generalToday,
+    totals.generalTotal,
+    totals.kaspTillYesterday,
+    totals.kaspToday,
+    totals.kaspTotal,
+    totals.medisepTillYesterday,
+    totals.medisepToday,
+    totals.medisepTotal,
+    totals.tillYesterday,
+    totals.today,
+    totals.grandTotal
+  ];
+  return [header, ...body, totalRow].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
 function swiztonRowsToCsv(rows) {
   const totals = swiztonTotals(rows);
   const percent = (numerator, denominator) => denominator ? Math.round((currencySafeNumber(numerator) / currencySafeNumber(denominator)) * 100) : 0;
@@ -4684,6 +4822,7 @@ function downloadFilteredCsvReport() {
   }
   const isDaily = selectedReportType() === "daily";
   const rows = isDaily ? filteredDailyRows() : filteredConsolidatedRows();
+  const procedureRows = procedureBreakdownRows();
   const range = getExportRange();
   const forecast = reportForecast(filteredDailyRows());
   const csv = [
@@ -4694,7 +4833,10 @@ function downloadFilteredCsvReport() {
     `Target,${forecast.selectedTarget}`,
     `Projected Month End,${forecast.projected}`,
     "",
-    isDaily ? filteredRowsToCsv(rows) : consolidatedRowsToCsv(rows)
+    isDaily ? filteredRowsToCsv(rows) : consolidatedRowsToCsv(rows),
+    "",
+    "Procedure Wise Entries",
+    procedureBreakdownRowsToCsv(procedureRows)
   ].join("\n");
   downloadBlob(csv, `kh-${isDaily ? "daily" : "consolidated"}-report-${range.fromDate}-to-${range.toDate}.csv`, "text/csv;charset=utf-8");
   showToast("Filtered CSV downloaded");
@@ -4853,6 +4995,8 @@ function professionalReportHtml() {
   const consolidatedRows = filteredConsolidatedRows();
   const consolidatedTotal = consolidatedTotals(consolidatedRows);
   const consolidatedPercent = consolidatedTotal.target ? Math.round((consolidatedTotal.total / consolidatedTotal.target) * 100) : 0;
+  const procedureRows = procedureBreakdownRows();
+  const procedureTotals = procedureBreakdownTotals(procedureRows);
   const centreName = document.getElementById("exportCentre").selectedOptions[0].textContent;
   const dailyTableRows = dailyRows.map((row) => `
     <tr>
@@ -4922,6 +5066,40 @@ function professionalReportHtml() {
       <!-- <td>${consolidatedTotal.ipTotal}</td> IP removed -->
     </tr>
   `;
+  const procedureTableRows = procedureRows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.procedure)}</td>
+      <td>${row.generalTillYesterday}</td>
+      <td>${row.generalToday}</td>
+      <td>${row.generalTotal}</td>
+      <td>${row.kaspTillYesterday}</td>
+      <td>${row.kaspToday}</td>
+      <td>${row.kaspTotal}</td>
+      <td>${row.medisepTillYesterday}</td>
+      <td>${row.medisepToday}</td>
+      <td>${row.medisepTotal}</td>
+      <td>${row.tillYesterday}</td>
+      <td>${row.today}</td>
+      <td>${row.grandTotal}</td>
+    </tr>
+  `).join("");
+  const procedureTotalRow = `
+    <tr style="font-weight:700;background:#e9f0f7">
+      <td>Total</td>
+      <td>${procedureTotals.generalTillYesterday}</td>
+      <td>${procedureTotals.generalToday}</td>
+      <td>${procedureTotals.generalTotal}</td>
+      <td>${procedureTotals.kaspTillYesterday}</td>
+      <td>${procedureTotals.kaspToday}</td>
+      <td>${procedureTotals.kaspTotal}</td>
+      <td>${procedureTotals.medisepTillYesterday}</td>
+      <td>${procedureTotals.medisepToday}</td>
+      <td>${procedureTotals.medisepTotal}</td>
+      <td>${procedureTotals.tillYesterday}</td>
+      <td>${procedureTotals.today}</td>
+      <td>${procedureTotals.grandTotal}</td>
+    </tr>
+  `;
   const tableSection = isDaily ? `
     <section>
       <h2>Daily Wise Detailed Data</h2>
@@ -4936,6 +5114,15 @@ function professionalReportHtml() {
       <table>
         <thead><tr><th>Centre</th><th>Target</th><th>Till Yesterday</th><th>Today</th><th>Total</th><th>%</th><th>CAG Today</th><th>CAG Total</th><th>General</th><th>KASP</th><th>MEDISEP</th><th>OP Total</th><!-- <th>IP Total</th> --></tr></thead>
         <tbody>${consolidatedTableRows ? `${consolidatedTableRows}${consolidatedTotalRow}` : `<tr><td colspan="12">No saved data for selected filters.</td></tr>`}</tbody>
+      </table>
+    </section>
+  `;
+  const procedureSection = `
+    <section class="page-break">
+      <h2>Procedure Wise Entries</h2>
+      <table>
+        <thead><tr><th>Procedure</th><th>General Till Yesterday</th><th>General Today</th><th>General Total</th><th>KASP Till Yesterday</th><th>KASP Today</th><th>KASP Total</th><th>MEDISEP Till Yesterday</th><th>MEDISEP Today</th><th>MEDISEP Total</th><th>Till Yesterday</th><th>Today</th><th>Grand Total</th></tr></thead>
+        <tbody>${procedureTableRows ? `${procedureTableRows}${procedureTotalRow}` : `<tr><td colspan="13">No saved procedure data for selected filters.</td></tr>`}</tbody>
       </table>
     </section>
   `;
@@ -4962,6 +5149,7 @@ function professionalReportHtml() {
     th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
     th { background: #e9f0f7; text-transform: uppercase; font-size: 11px; }
     .two { display: grid; grid-template-columns: 1.3fr .7fr; gap: 14px; }
+    .page-break { break-before: page; page-break-before: always; }
     @media print { body { background: white; } main { padding: 0; } }
   </style>
 </head>
@@ -4998,6 +5186,7 @@ function professionalReportHtml() {
       <p>Average ${forecast.average.toFixed(1)} interventions per saved day across ${forecast.dayCount} saved day${forecast.dayCount === 1 ? "" : "s"}. Projected month-end total is ${forecast.projected} for a ${forecast.lastDay}-day month. Current achievement is ${forecast.achievement}% against target ${forecast.selectedTarget}; projected achievement is ${forecast.projectedAchievement}%. Required run rate is ${forecast.requiredPerDay.toFixed(1)} per remaining day.</p>
     </section>
     ${tableSection}
+    ${procedureSection}
   </main>
 </body>
 </html>`;
@@ -5248,13 +5437,17 @@ function downloadSelectedMonthReport() {
   refreshCenterRollups(reportDate);
   renderConsolidated();
   const month = selectedMonthLabel();
+  const procedureRows = procedureBreakdownRows();
   const csv = [
     `KH Operations Report - ${month}`,
     `Report Till,${displayDate(reportDate)}`,
     "",
     tableToCsv("Procedure Consolidated", "consolidatedTable"),
     "",
-    tableToCsv("OP & Diagnostics Consolidated", "opsConsolidatedTable")
+    tableToCsv("OP & Diagnostics Consolidated", "opsConsolidatedTable"),
+    "",
+    "Procedure Wise Entries",
+    procedureBreakdownRowsToCsv(procedureRows)
   ].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
