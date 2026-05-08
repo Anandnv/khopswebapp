@@ -570,6 +570,7 @@ async function loadFromSupabase() {
   if (!rowsErr && rows) {
     Object.keys(entries).forEach(k => delete entries[k]);
     rows.forEach(r => {
+      if (Number(r.centre_index) < 0 || Number(r.centre_index) >= centers.length) return;
       if (!entries[r.centre_index]) entries[r.centre_index] = {};
       entries[r.centre_index][r.entry_date] = {
         op:         r.op         || {},
@@ -835,7 +836,18 @@ async function saveConfig() {
 }
 
 async function saveOneEntry(centreIndex, date) {
+  if (centreIndex < 0 || centreIndex >= centers.length) return;
   const entry = getEntry(centreIndex, date);
+  if (!entryHasMeaningfulData(entry)) {
+    clearEntryRecord(centreIndex, date);
+    const { error } = await supabaseClient
+      .from("daily_entries")
+      .delete()
+      .eq("centre_index", centreIndex)
+      .eq("entry_date", date);
+    if (error) throw error;
+    return;
+  }
   const { error } = await supabaseClient
     .from("daily_entries")
     .upsert({
@@ -855,6 +867,8 @@ async function saveAllEntries() {
   Object.keys(entries).forEach(ci => {
     Object.keys(entries[ci]).forEach(date => {
       const e = entries[ci][date];
+      if (Number(ci) < 0 || Number(ci) >= centers.length) return;
+      if (!entryHasMeaningfulData(e)) return;
       rows.push({
         centre_index: Number(ci),
         centre_name:  centers[ci]?.name || "",
@@ -874,6 +888,17 @@ async function saveAllEntries() {
 }
 
 async function saveOneMeta(centreIndex, date) {
+  if (centreIndex < 0 || centreIndex >= centers.length) return;
+  if (!entries[centreIndex]?.[date] || !entryHasMeaningfulData(entries[centreIndex][date])) {
+    delete entryMeta[centreIndex]?.[date];
+    const { error } = await supabaseClient
+      .from("entry_meta")
+      .delete()
+      .eq("centre_index", centreIndex)
+      .eq("entry_date", date);
+    if (error) throw error;
+    return;
+  }
   const meta = getEntryMeta(centreIndex, date);
   if (!meta) return;
   const { error } = await supabaseClient
@@ -891,6 +916,8 @@ async function saveAllMeta() {
   const rows = [];
   Object.keys(entryMeta).forEach(ci => {
     Object.keys(entryMeta[ci]).forEach(date => {
+      if (Number(ci) < 0 || Number(ci) >= centers.length) return;
+      if (!entries[ci]?.[date] || !entryHasMeaningfulData(entries[ci][date])) return;
       const m = entryMeta[ci][date];
       rows.push({ centre_index: Number(ci), entry_date: date, saved_at: m.savedAt, saved_by: m.savedBy });
     });
@@ -1053,6 +1080,21 @@ function emptyEntry() {
     referrals: {},
     procedures: {}
   };
+}
+
+function entryHasMeaningfulData(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  const hasOp = Object.values(entry.op || {}).some((value) => currencySafeNumber(value) !== 0);
+  const hasReferrals = Object.values(entry.referrals || {}).some((value) => currencySafeNumber(value) !== 0);
+  const hasProcedures = Object.values(entry.procedures || {}).some((payerMap) =>
+    Object.values(payerMap || {}).some((value) => currencySafeNumber(value) !== 0)
+  );
+  return hasOp || hasReferrals || hasProcedures;
+}
+
+function clearEntryRecord(centreIndex, date) {
+  if (entries[centreIndex]) delete entries[centreIndex][date];
+  if (entryMeta[centreIndex]) delete entryMeta[centreIndex][date];
 }
 
 function ensureCentreEntries(centerIndex) {
@@ -7508,6 +7550,8 @@ function setupCaptureButtons() {
 // ─── Admin Edit Data Feature ──────────────────────────────────────────────────
 
 let adminEditEnabled = false; // true after admin confirms the warning modal
+let adminEditLoadedDate = "";
+let adminEditLoadedCentreIndex = -1;
 
 function renderAdminEditDataTab() {
   const centreIndex = activeCentreDashboardIndex;
@@ -7517,12 +7561,15 @@ function renderAdminEditDataTab() {
   const nameEl = document.getElementById("adminEditCentreName");
   if (nameEl) nameEl.textContent = centre?.name || "";
 
-  // Default date to reportDate
+  // Always reset the admin edit date to the currently selected report date
+  // so an older loaded date cannot silently carry over to another centre/month.
   const dateInput = document.getElementById("adminEditDate");
-  if (dateInput && !dateInput.value) dateInput.value = reportDate;
+  if (dateInput) dateInput.value = reportDate;
 
   // Reset to locked state when switching to this tab
   adminEditEnabled = false;
+  adminEditLoadedDate = "";
+  adminEditLoadedCentreIndex = -1;
   setAdminEditLocked(true);
 
   // Load the current date's data in read-only mode
@@ -7549,6 +7596,9 @@ function adminEditLoadDate(editable) {
     showToast("Cannot edit future dates.");
     return;
   }
+
+  adminEditLoadedDate = date;
+  adminEditLoadedCentreIndex = centreIndex;
 
   // Last updated meta
   const metaEl = document.getElementById("adminEditLastUpdated");
@@ -7577,6 +7627,11 @@ function adminSaveEntry() {
   const dateInput = document.getElementById("adminEditDate");
   const date = dateInput?.value || reportDate;
   const today = todayIST();
+
+  if (adminEditLoadedDate !== date || adminEditLoadedCentreIndex !== centreIndex) {
+    showToast("Click Load Date before saving so the form matches the selected centre and date.");
+    return;
+  }
 
   if (date > today) {
     showToast("Cannot save data for a future date.");
@@ -7613,6 +7668,13 @@ function adminSaveEntry() {
     setProcedure(entry, procedure, "kasp", kaspToday);
     setProcedure(entry, procedure, "medisep", medisepToday);
   });
+
+  const creatingNewEntry = !entryHasMeaningfulData(beforeSnapshot) && entryHasMeaningfulData(entry);
+  const totalProcedures = entryInterventionTotal(entry);
+  const confirmMessage = creatingNewEntry
+    ? `Create a new admin-edited entry for ${centre.name} on ${displayDate(date)} with ${totalProcedures} intervention total?`
+    : `Save admin changes for ${centre.name} on ${displayDate(date)}?`;
+  if (!window.confirm(confirmMessage)) return;
 
   // Audit logs
   writeAuditLog(centreIndex, date, beforeSnapshot, entry);
