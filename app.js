@@ -678,6 +678,24 @@ function mergeLocalSupplementalState() {
     ) {
       monthlyTargets = normalizeMonthlyTargets(state.monthlyTargets);
     }
+    if (state.entries && typeof state.entries === "object" && state.entryMeta && typeof state.entryMeta === "object") {
+      Object.keys(state.entryMeta).forEach((centreIndex) => {
+        Object.keys(state.entryMeta[centreIndex] || {}).forEach((date) => {
+          const localMeta = state.entryMeta[centreIndex]?.[date];
+          const localEntry = state.entries[centreIndex]?.[date];
+          if (!localMeta || !localEntry || !entryHasMeaningfulData(localEntry)) return;
+          const cloudMeta = entryMeta[centreIndex]?.[date];
+          const localSavedAt = new Date(localMeta.savedAt || 0).getTime();
+          const cloudSavedAt = new Date(cloudMeta?.savedAt || 0).getTime();
+          if (!cloudMeta || localSavedAt > cloudSavedAt) {
+            if (!entries[centreIndex]) entries[centreIndex] = {};
+            if (!entryMeta[centreIndex]) entryMeta[centreIndex] = {};
+            entries[centreIndex][date] = deepCloneEntry(localEntry);
+            entryMeta[centreIndex][date] = { ...localMeta };
+          }
+        });
+      });
+    }
     migrateLegacyTargets(state.reportDate);
   } catch (err) {
     console.warn("Could not merge local supplemental state:", err);
@@ -763,19 +781,27 @@ async function saveAll() {
 }
 
 // Targeted save called right after a centre submits daily entry
-async function persistEntry(centreIndex, date) {
+async function persistEntry(centreIndex, date, options = {}) {
+  const { saveConfigToo = false } = options;
   saveLocalBackup();
-  if (!supabaseClient) { showToast("Saved locally (offline mode)"); return; }
+  if (!supabaseClient) {
+    showToast("Saved locally (offline mode)");
+    return true;
+  }
   try {
-    await Promise.all([
+    const tasks = [
       saveOneEntry(centreIndex, date),
       saveOneMeta(centreIndex, date),
       saveLatestAuditEntry()
-    ]);
+    ];
+    if (saveConfigToo) tasks.push(saveConfig());
+    await Promise.all(tasks);
     showToast("Data saved successfully");
+    return true;
   } catch (err) {
     console.error("persistEntry failed:", err);
     showToast("Save failed. Check your connection");
+    return false;
   }
 }
 
@@ -3769,7 +3795,7 @@ function renderEntryForCurrentDate() {
   if (saveBtn) saveBtn.classList.toggle("hidden", !editable);
 }
 
-function updateFromDailyEntry() {
+async function updateFromDailyEntry() {
   if (currentRole !== "centre") {
     showToast("Admin is view only. Login as a centre to enter daily data.");
     return;
@@ -3841,8 +3867,8 @@ function updateFromDailyEntry() {
   renderBars();
   renderPayerSplit();
   renderEntryForCurrentDate();
-  persistEntry(loggedInCentreIndex, date);
-  showToast(`${center.name} entry saved and reflected in reports`);
+  const persisted = await persistEntry(loggedInCentreIndex, date);
+  if (persisted) showToast(`${center.name} entry saved and reflected in reports`);
 }
 
 function openCentre(index, detailTab = "operations") {
@@ -7805,7 +7831,7 @@ function adminEditLoadDate(editable) {
   renderProcedureTable("adminProcedureEntryTable", editable, centreIndex, date);
 }
 
-function adminSaveEntry() {
+async function adminSaveEntry() {
   if (!adminEditEnabled) {
     showToast("Enable editing first.");
     return;
@@ -7893,7 +7919,8 @@ function adminSaveEntry() {
   // Refresh the operations tab snapshot too
   openCentre(centreIndex, "editdata");
 
-  persistEntry(centreIndex, date);
+  const persisted = await persistEntry(centreIndex, date, { saveConfigToo: true });
+  if (!persisted) return;
   showToast(`✅ ${centre.name} data for ${displayDate(date)} saved by ${actorLabel}`);
 }
 
