@@ -4,7 +4,7 @@ async function mockExternalScripts(page) {
   await page.route("**/config.js", async (route) => {
     await route.fulfill({
       contentType: "application/javascript; charset=utf-8",
-      body: "window.KH_CONFIG = { supabaseUrl: '', supabaseAnonKey: '', enableDemoData: false };"
+      body: "window.KH_CONFIG = { supabaseUrl: '', supabaseAnonKey: '', enableDemoData: false, superAdminUsername: 'superadmin', superAdminPasswordHash: 'e34f92a20532a873cb3184398070b4b82a8fa29cf48572c203dc5f0fa6158231' };"
     });
   });
 
@@ -47,6 +47,14 @@ async function loginAsAdmin(page) {
   await page.locator("#loginBtn").click();
   await expect(page.locator("#appShell")).toBeVisible();
   await expect(page.locator("#adminView")).toHaveClass(/active/);
+}
+
+async function loginAsSuperAdmin(page) {
+  await page.getByRole("button", { name: "Admin" }).click();
+  await page.locator("#loginAdminUsername").fill("superadmin");
+  await page.locator("#loginPassword").fill("superadmin123");
+  await page.locator("#loginBtn").click();
+  await expect(page.locator("#appShell")).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -195,4 +203,31 @@ test("centre advice download exports an excel file", async ({ page }) => {
   await page.locator("#adviceDownloadBtn").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.xlsx$/i);
+});
+
+test("super admin notifications appear on an already open centre session", async ({ browser }) => {
+  const centrePage = await browser.newPage();
+  await gotoApp(centrePage);
+  await loginAsCentre(centrePage);
+
+  const superAdminPage = await browser.newPage();
+  await gotoApp(superAdminPage);
+  await loginAsSuperAdmin(superAdminPage);
+  await superAdminPage.locator('.nav-item[data-view="superadmin"]').click();
+  await expect(superAdminPage.locator("#superadminView")).toHaveClass(/active/);
+
+  await superAdminPage.locator("#notificationTitle").fill("Realtime update");
+  await superAdminPage.locator("#notificationMessage").fill("This popup should appear without reloading the centre session.");
+  await superAdminPage.locator("#notifyAllCentres").check();
+  await superAdminPage.locator("#notificationSendBtn").click();
+  await expect(superAdminPage.locator("#toast")).toContainText(/popup notification sent/i);
+
+  await expect(centrePage.locator("#notificationModal")).toBeVisible();
+  await expect(centrePage.locator("#notificationModalBody")).toContainText("without reloading");
+
+  await centrePage.locator("#notificationModalDismiss").click();
+  await expect(centrePage.locator("#notificationModal")).toBeHidden();
+
+  await superAdminPage.close();
+  await centrePage.close();
 });

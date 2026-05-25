@@ -1167,6 +1167,66 @@
 
         <!-- ─── Super Admin Panel ─────────────────────────────────────── -->
         <section id="superadminView" class="view">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Push Notifications</h2>
+                <p>Send popup updates to all users, all centres, all admins, or selected centres/admins. Active sessions will pick them up automatically.</p>
+              </div>
+            </div>
+            <div class="filter-grid">
+              <label>
+                <span>Title</span>
+                <input type="text" id="notificationTitle" placeholder="e.g. System update tonight" />
+              </label>
+              <label style="grid-column:1 / -1">
+                <span>Message</span>
+                <textarea id="notificationMessage" rows="4" placeholder="Write the popup message exactly as you want users to see it."></textarea>
+              </label>
+            </div>
+            <div class="notification-audience-grid">
+              <label class="notification-check">
+                <input type="checkbox" id="notifyAllUsers" />
+                <span>All web app users</span>
+              </label>
+              <label class="notification-check">
+                <input type="checkbox" id="notifyAllCentres" />
+                <span>All centre users</span>
+              </label>
+              <label class="notification-check">
+                <input type="checkbox" id="notifyAllAdmins" />
+                <span>All admin users</span>
+              </label>
+              <label class="notification-check">
+                <input type="checkbox" id="notifyIncludeSuperAdmin" />
+                <span>Also show to super admin</span>
+              </label>
+            </div>
+            <div class="notification-target-wrap">
+              <div>
+                <span class="notification-target-label">Selected centres</span>
+                <div class="notification-target-chips" id="notificationCentreTargets"></div>
+              </div>
+              <div>
+                <span class="notification-target-label">Selected admins</span>
+                <div class="notification-target-chips" id="notificationAdminTargets"></div>
+              </div>
+            </div>
+            <div class="form-actions" style="margin-top:16px;justify-content:flex-end">
+              <button class="button secondary" id="notificationClearBtn" type="button">Clear</button>
+              <button class="button primary" id="notificationSendBtn" type="button">Send Popup</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>Active Notifications</h2>
+                <p>Recent popups stay here so you can review, deactivate, or remove them later.</p>
+              </div>
+            </div>
+            <div id="notificationList"></div>
+          </section>
 
           <!-- Admin accounts -->
           <section class="panel">
@@ -1280,6 +1340,20 @@
     </div>
 
     <div class="toast" id="toast"></div>
+
+    <div class="modal-overlay hidden" id="notificationModal">
+      <div class="modal notification-modal">
+        <div class="modal-head">
+          <h2 id="notificationModalTitle">Important update</h2>
+          <button class="modal-close" id="notificationModalClose">&#10005;</button>
+        </div>
+        <p id="notificationModalMeta"></p>
+        <div class="notification-modal-body" id="notificationModalBody"></div>
+        <div class="modal-actions">
+          <button class="button primary" id="notificationModalDismiss" type="button">Close</button>
+        </div>
+      </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>

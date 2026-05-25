@@ -39,6 +39,7 @@ let auditLog = [];
 // adminAuditLog: tracks admin actions (approve/reject unlock, target change, revert, etc.)
 // { id, adminName, action, detail, centreIndexes, timestamp }
 let adminAuditLog = [];
+let appNotifications = [];
 // admins: [{ id, name, username, passwordHash, assignedCentres: [0,1,...], createdAt }]
 let admins = [];
 let swiztonEntries = [];
@@ -120,6 +121,9 @@ let supabaseClient = null;
 let persistenceReady = false;
 let saveTimer = null;
 let partialRestoreContext = null;
+let remoteNotificationRefreshBusy = false;
+let lastRemoteConfigUpdatedAt = "";
+let notificationBroadcastChannel = null;
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
   config: CONFIG,
   getAdmins: () => admins,
@@ -333,6 +337,187 @@ function getCompanyScopedCentreIndexes() {
   return assigned.filter((index) => centerMatchesActiveCompany(centers[index]));
 }
 
+function currentUserNotificationKey() {
+  if (currentRole === "superadmin") return "superadmin";
+  if (currentRole === "admin") return `admin:${String(admins[loggedInAdminIndex]?.username || loggedInAdminIndex)}`;
+  if (currentRole === "centre") return `centre:${loggedInCentreIndex}`;
+  return "guest";
+}
+
+function dismissedNotificationStorageKey() {
+  return `kh-dismissed-notifications-v1:${currentUserNotificationKey()}`;
+}
+
+function getDismissedNotificationIds() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(dismissedNotificationStorageKey()) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setDismissedNotificationIds(ids) {
+  localStorage.setItem(dismissedNotificationStorageKey(), JSON.stringify(ids));
+}
+
+function dismissNotification(notificationId) {
+  const ids = new Set(getDismissedNotificationIds());
+  ids.add(String(notificationId));
+  setDismissedNotificationIds([...ids]);
+  renderNotificationPopup();
+}
+
+function isNotificationVisibleToCurrentUser(notification) {
+  if (!notification || notification.active === false) return false;
+  const audience = notification.audience || {};
+  if (audience.allUsers) return true;
+  if (currentRole === "superadmin") return audience.includeSuperAdmin === true;
+  if (currentRole === "admin") {
+    const username = String(admins[loggedInAdminIndex]?.username || "").trim().toLowerCase();
+    return audience.allAdmins === true || audience.adminUsernames?.includes(username);
+  }
+  if (currentRole === "centre") {
+    return audience.allCentres === true || audience.centreIndexes?.includes(loggedInCentreIndex);
+  }
+  return false;
+}
+
+function visibleNotificationsForCurrentUser() {
+  const dismissed = new Set(getDismissedNotificationIds());
+  return normalizeNotifications(appNotifications).filter((notification) => (
+    isNotificationVisibleToCurrentUser(notification) &&
+    !dismissed.has(String(notification.id))
+  ));
+}
+
+function notificationAudienceSummary(notification) {
+  const audience = notification?.audience || {};
+  const parts = [];
+  if (audience.allUsers) parts.push("All users");
+  if (audience.allCentres) parts.push("All centres");
+  if (Array.isArray(audience.centreIndexes) && audience.centreIndexes.length) {
+    parts.push(`Centres: ${audience.centreIndexes.map((index) => centers[index]?.name).filter(Boolean).join(", ")}`);
+  }
+  if (audience.allAdmins) parts.push("All admins");
+  if (Array.isArray(audience.adminUsernames) && audience.adminUsernames.length) {
+    parts.push(`Admins: ${audience.adminUsernames.join(", ")}`);
+  }
+  if (audience.includeSuperAdmin) parts.push("Super admin");
+  return parts.join(" • ") || "No recipients selected";
+}
+
+function renderNotificationPopup() {
+  const modal = document.getElementById("notificationModal");
+  if (!modal) return;
+  if (document.getElementById("appShell")?.classList.contains("hidden")) {
+    modal.classList.add("hidden");
+    return;
+  }
+  const [notification] = visibleNotificationsForCurrentUser();
+  if (!notification) {
+    modal.classList.add("hidden");
+    return;
+  }
+  document.getElementById("notificationModalTitle").textContent = notification.title;
+  document.getElementById("notificationModalMeta").textContent =
+    `${notification.createdBy} • ${formatSavedAt(notification.createdAt)}`;
+  document.getElementById("notificationModalBody").textContent = notification.message;
+  document.getElementById("notificationModalDismiss").onclick = () => dismissNotification(notification.id);
+  document.getElementById("notificationModalClose").onclick = () => dismissNotification(notification.id);
+  modal.classList.remove("hidden");
+}
+
+function clearNotificationComposer() {
+  ["notificationTitle", "notificationMessage"].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.value = "";
+  });
+  ["notifyAllUsers", "notifyAllCentres", "notifyAllAdmins", "notifyIncludeSuperAdmin"].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.checked = false;
+  });
+  document.querySelectorAll(".notification-target-chip.selected").forEach((chip) => chip.classList.remove("selected"));
+}
+
+function renderNotificationTargetOptions() {
+  const centreContainer = document.getElementById("notificationCentreTargets");
+  const adminContainer = document.getElementById("notificationAdminTargets");
+  if (centreContainer) {
+    centreContainer.innerHTML = centers
+      .map((center, index) => `
+        <button type="button" class="notification-target-chip" data-notify-centre="${index}">
+          ${escapeHtml(center.name)}
+        </button>
+      `)
+      .join("");
+  }
+  if (adminContainer) {
+    adminContainer.innerHTML = admins
+      .map((admin, index) => `
+        <button type="button" class="notification-target-chip" data-notify-admin="${escapeHtml(String(admin.username || index).toLowerCase())}">
+          ${escapeHtml(admin.name || admin.username)}
+        </button>
+      `)
+      .join("");
+  }
+  document.querySelectorAll("[data-notify-centre], [data-notify-admin]").forEach((chip) => {
+    chip.addEventListener("click", () => chip.classList.toggle("selected"));
+  });
+}
+
+function renderNotificationList() {
+  const container = document.getElementById("notificationList");
+  if (!container) return;
+  if (!appNotifications.length) {
+    container.innerHTML = `<p style="color:var(--muted);padding:16px 0">No popup notifications sent yet.</p>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="notification-card-list">
+      ${normalizeNotifications(appNotifications).map((notification) => `
+        <div class="notification-card">
+          <div class="notification-card-head">
+            <div>
+              <strong>${escapeHtml(notification.title)}</strong>
+              <div class="notification-card-meta">
+                <span>${escapeHtml(notification.createdBy)}</span>
+                <span>${formatSavedAt(notification.createdAt)}</span>
+                <span>${escapeHtml(notificationAudienceSummary(notification))}</span>
+              </div>
+            </div>
+            <span class="notification-badge ${notification.active ? "" : "inactive"}">
+              ${notification.active ? "Active" : "Inactive"}
+            </span>
+          </div>
+          <div class="notification-card-message">${escapeHtml(notification.message)}</div>
+          <div class="form-actions" style="justify-content:flex-end">
+            <button class="button secondary" type="button" data-notification-toggle="${notification.id}">
+              ${notification.active ? "Deactivate" : "Reactivate"}
+            </button>
+            <button class="button secondary" type="button" data-notification-delete="${notification.id}" style="color:var(--red)">Delete</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  container.querySelectorAll("[data-notification-toggle]").forEach((button) => {
+    button.addEventListener("click", () => toggleNotificationActive(button.dataset.notificationToggle));
+  });
+  container.querySelectorAll("[data-notification-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteNotification(button.dataset.notificationDelete));
+  });
+}
+
+function broadcastNotificationState() {
+  if (!notificationBroadcastChannel) return;
+  notificationBroadcastChannel.postMessage({
+    type: "notifications:update",
+    notifications: appNotifications,
+    admins
+  });
+}
+
 
 
 function setEntryMeta(centreIndex, date, centreName) {
@@ -466,6 +651,7 @@ function getAppState() {
     unlockRequests,
     auditLog,
     adminAuditLog,
+    appNotifications,
     admins,
     reportDate
   };
@@ -505,6 +691,7 @@ function applyAppState(state) {
   if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
   if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
   if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
+  if (Array.isArray(state.appNotifications)) appNotifications = normalizeNotifications(state.appNotifications);
   if (Array.isArray(state.admins)) admins = state.admins;
   // Default to yesterday — morning reports show previous day's data
   setReportDate(state.reportDate || reportDate);
@@ -569,6 +756,8 @@ async function loadFromSupabase() {
   }
   if (Array.isArray(cfg.admins)) admins = cfg.admins;
   if (Array.isArray(cfg.admin_audit_log)) adminAuditLog = cfg.admin_audit_log;
+  if (Array.isArray(cfg.notifications)) appNotifications = normalizeNotifications(cfg.notifications);
+  lastRemoteConfigUpdatedAt = cfg.updated_at || lastRemoteConfigUpdatedAt;
 
   // 2. Daily entries → rebuild nested entries object
   const { data: rows, error: rowsErr } = await supabaseClient
@@ -664,6 +853,9 @@ function mergeLocalSupplementalState() {
     if ((!Array.isArray(adminAuditLog) || adminAuditLog.length === 0) && Array.isArray(state.adminAuditLog) && state.adminAuditLog.length) {
       adminAuditLog = state.adminAuditLog;
     }
+    if ((!Array.isArray(appNotifications) || appNotifications.length === 0) && Array.isArray(state.appNotifications) && state.appNotifications.length) {
+      appNotifications = normalizeNotifications(state.appNotifications);
+    }
     if (
       state.pettyCash &&
       typeof state.pettyCash === "object" &&
@@ -744,6 +936,7 @@ function loadFromLocalStorage() {
     if (Array.isArray(state.unlockRequests)) unlockRequests = state.unlockRequests;
     if (Array.isArray(state.auditLog)) auditLog = state.auditLog;
     if (Array.isArray(state.adminAuditLog)) adminAuditLog = state.adminAuditLog;
+    if (Array.isArray(state.appNotifications)) appNotifications = normalizeNotifications(state.appNotifications);
     if (Array.isArray(state.admins)) admins = state.admins;
     migrateLegacyTargets(state.reportDate);
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -838,6 +1031,7 @@ async function saveConfig() {
     monthly_targets: monthlyTargets,
     admins,
     admin_audit_log: adminAuditLog,
+    notifications: appNotifications,
     updated_at: new Date().toISOString()
   };
 
@@ -846,7 +1040,7 @@ async function saveConfig() {
     .upsert(payload);
 
   // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice|monthly_targets/i.test(error.message || "")) {
+  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice|monthly_targets|notifications/i.test(error.message || "")) {
     const fallbackPayload = { ...payload };
     if (/admins|admin_audit_log/i.test(error.message || "")) {
       delete fallbackPayload.admins;
@@ -866,6 +1060,9 @@ async function saveConfig() {
     }
     if (/monthly_targets/i.test(error.message || "")) {
       delete fallbackPayload.monthly_targets;
+    }
+    if (/notifications/i.test(error.message || "")) {
+      delete fallbackPayload.notifications;
     }
     ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
     if (!error) {
@@ -1358,6 +1555,32 @@ function normalizeProcedureAdviceStore(value = {}) {
     normalized[key] = Array.isArray(value[key]) ? value[key] : [];
   });
   return normalized;
+}
+
+function normalizeNotifications(value = []) {
+  return (Array.isArray(value) ? value : [])
+    .map((notification) => ({
+      id: notification?.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: String(notification?.title || "").trim(),
+      message: String(notification?.message || "").trim(),
+      active: notification?.active !== false,
+      createdAt: notification?.createdAt || new Date().toISOString(),
+      createdBy: String(notification?.createdBy || "Super Admin"),
+      audience: {
+        allUsers: notification?.audience?.allUsers === true,
+        allCentres: notification?.audience?.allCentres === true,
+        centreIndexes: Array.isArray(notification?.audience?.centreIndexes)
+          ? notification.audience.centreIndexes.map((value) => Number(value)).filter(Number.isInteger)
+          : [],
+        allAdmins: notification?.audience?.allAdmins === true,
+        adminUsernames: Array.isArray(notification?.audience?.adminUsernames)
+          ? notification.audience.adminUsernames.map((value) => String(value || "").trim().toLowerCase()).filter(Boolean)
+          : [],
+        includeSuperAdmin: notification?.audience?.includeSuperAdmin === true
+      }
+    }))
+    .filter((notification) => notification.title && notification.message)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }
 
 function normalizeMonthlyTargets(value = {}) {
@@ -3360,6 +3583,8 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     document.getElementById("exportCentre").disabled = true;
     renderConsolidated();
     renderAdminReportPreview();
+    renderNotificationPopup();
+    refreshNotificationState({ force: true });
     showView("entry");
     return;
   }
@@ -3372,6 +3597,8 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     renderConsolidated();
     renderProcedureAdviceView();
     renderAdminReportPreview();
+    renderNotificationPopup();
+    refreshNotificationState({ force: true });
     showView("admin");
     return;
   }
@@ -3390,6 +3617,8 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
   renderConsolidated();
   renderProcedureAdviceView();
   renderAdminReportPreview();
+  renderNotificationPopup();
+  refreshNotificationState({ force: true });
   showView("admin");
 }
 
@@ -5531,12 +5760,9 @@ function resetAppStateToDefaults() {
   unlockRequests = [];
   auditLog = [];
   adminAuditLog = [];
+  appNotifications = [];
   admins = [];
-  reportDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  })();
+  reportDate = getYesterdayIST();
 }
 
 async function replaceLiveStateInSupabase() {
@@ -6790,6 +7016,7 @@ async function init() {
   setupCentreDetailTabs();
   setupAdminEditDataTab();
   setupSuperAdminControls();
+  setupNotificationRealtime();
   document.getElementById("backupCompareClearBtn")?.addEventListener("click", clearBackupComparison);
   document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
   document.getElementById("partialRestoreClearBtn")?.addEventListener("click", clearPartialRestore);
@@ -6843,6 +7070,7 @@ async function init() {
   renderTargets();
   renderUsers();
   renderProcedures();
+  refreshNotificationUIs();
   clearSwiztonForm();
   renderUnlockRequests();
   renderAuditLog();
@@ -6869,12 +7097,15 @@ async function init() {
   }
  // Backup and restore — daily check runs every hour
   setInterval(ensureDailyBackup, 3600000);
+  setInterval(refreshNotificationState, 3000);
 
 }
 
 // ─── Super Admin Panel ───────────────────────────────────────────────────────
 
 function renderSuperAdminPanel() {
+  renderNotificationTargetOptions();
+  renderNotificationList();
   renderAdminList();
   renderAdminAuditLog();
 }
@@ -7053,6 +7284,9 @@ function renderAdminAuditLog() {
     assign_centres:        ["audit-badge-normal",  "Assigned Centres"],
     change_admin_password: ["audit-badge-normal",  "Password Changed"],
     admin_data_edit:       ["audit-badge-unlock",  "Admin Data Edit"],
+    push_notification:     ["audit-badge-normal",  "Pushed Notification"],
+    toggle_notification:   ["audit-badge-unlock",  "Updated Notification"],
+    delete_notification:   ["audit-badge-revert",  "Deleted Notification"]
   };
 
   container.innerHTML = logs.map(log => {
@@ -7072,6 +7306,148 @@ function renderAdminAuditLog() {
   }).join("");
 }
 
+function readNotificationAudienceFromComposer() {
+  const allUsers = document.getElementById("notifyAllUsers")?.checked === true;
+  const allCentres = document.getElementById("notifyAllCentres")?.checked === true;
+  const allAdmins = document.getElementById("notifyAllAdmins")?.checked === true;
+  const includeSuperAdmin = document.getElementById("notifyIncludeSuperAdmin")?.checked === true;
+  const centreIndexes = Array.from(document.querySelectorAll("[data-notify-centre].selected"))
+    .map((chip) => Number(chip.dataset.notifyCentre))
+    .filter(Number.isInteger);
+  const adminUsernames = Array.from(document.querySelectorAll("[data-notify-admin].selected"))
+    .map((chip) => String(chip.dataset.notifyAdmin || "").trim().toLowerCase())
+    .filter(Boolean);
+  return { allUsers, allCentres, centreIndexes, allAdmins, adminUsernames, includeSuperAdmin };
+}
+
+function sendNotification() {
+  const title = document.getElementById("notificationTitle")?.value.trim() || "";
+  const message = document.getElementById("notificationMessage")?.value.trim() || "";
+  const audience = readNotificationAudienceFromComposer();
+  const hasRecipients = audience.allUsers || audience.allCentres || audience.centreIndexes.length || audience.allAdmins || audience.adminUsernames.length || audience.includeSuperAdmin;
+
+  if (!title || !message) {
+    showToast("Enter a title and message for the popup.");
+    return;
+  }
+  if (!hasRecipients) {
+    showToast("Choose at least one recipient group.");
+    return;
+  }
+
+  const notification = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title,
+    message,
+    active: true,
+    createdAt: new Date().toISOString(),
+    createdBy: getCurrentActorLabel(),
+    audience
+  };
+
+  appNotifications = normalizeNotifications([notification, ...appNotifications]);
+  writeAdminAuditLog("push_notification", `Pushed popup "${title}" to ${notificationAudienceSummary(notification)}`);
+  saveLocalBackup();
+  broadcastNotificationState();
+  persistSoon();
+  clearNotificationComposer();
+  renderNotificationList();
+  renderNotificationPopup();
+  showToast("Popup notification sent");
+}
+
+function toggleNotificationActive(notificationId) {
+  const notification = appNotifications.find((item) => String(item.id) === String(notificationId));
+  if (!notification) return;
+  notification.active = !notification.active;
+  writeAdminAuditLog(
+    "toggle_notification",
+    `${notification.active ? "Reactivated" : "Deactivated"} popup "${notification.title}"`
+  );
+  saveLocalBackup();
+  broadcastNotificationState();
+  persistSoon();
+  renderNotificationList();
+  renderNotificationPopup();
+  showToast(notification.active ? "Notification reactivated" : "Notification deactivated");
+}
+
+function deleteNotification(notificationId) {
+  const notification = appNotifications.find((item) => String(item.id) === String(notificationId));
+  if (!notification) return;
+  if (!window.confirm(`Delete popup "${notification.title}"?`)) return;
+  appNotifications = appNotifications.filter((item) => String(item.id) !== String(notificationId));
+  writeAdminAuditLog("delete_notification", `Deleted popup "${notification.title}"`);
+  saveLocalBackup();
+  broadcastNotificationState();
+  persistSoon();
+  renderNotificationList();
+  renderNotificationPopup();
+  showToast("Notification deleted");
+}
+
+function refreshNotificationUIs() {
+  renderNotificationPopup();
+  if (currentRole === "superadmin") {
+    renderNotificationTargetOptions();
+    renderNotificationList();
+  }
+}
+
+async function refreshNotificationState(options = {}) {
+  if (!persistenceReady) return;
+  if (supabaseClient) {
+    if (remoteNotificationRefreshBusy) return;
+    remoteNotificationRefreshBusy = true;
+    try {
+      const { data, error } = await supabaseClient
+        .from("app_config")
+        .select("admins, notifications, updated_at")
+        .eq("id", "main")
+        .maybeSingle();
+      if (!error && data) {
+        const hasChanged = options.force === true || (data.updated_at && data.updated_at !== lastRemoteConfigUpdatedAt);
+        if (hasChanged) {
+          if (Array.isArray(data.admins)) admins = data.admins;
+          if (Array.isArray(data.notifications)) appNotifications = normalizeNotifications(data.notifications);
+          lastRemoteConfigUpdatedAt = data.updated_at || lastRemoteConfigUpdatedAt;
+          refreshNotificationUIs();
+        }
+      }
+    } catch (error) {
+      console.warn("Notification refresh failed:", error);
+    } finally {
+      remoteNotificationRefreshBusy = false;
+    }
+    return;
+  }
+  try {
+    const rawState = localStorage.getItem(STORAGE_KEY);
+    if (rawState) {
+      const state = JSON.parse(rawState);
+      if (Array.isArray(state.appNotifications)) appNotifications = normalizeNotifications(state.appNotifications);
+      if (Array.isArray(state.admins)) admins = state.admins;
+    }
+  } catch (error) {
+    console.warn("Local notification refresh failed:", error);
+  }
+  refreshNotificationUIs();
+}
+
+function setupNotificationRealtime() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_KEY || !event.newValue) return;
+    try {
+      const state = JSON.parse(event.newValue);
+      if (Array.isArray(state.appNotifications)) appNotifications = normalizeNotifications(state.appNotifications);
+      if (Array.isArray(state.admins)) admins = state.admins;
+      refreshNotificationUIs();
+    } catch (error) {
+      console.warn("Could not refresh notifications from local storage event:", error);
+    }
+  });
+}
+
 function setupSuperAdminControls() {
   document.getElementById("addAdminBtn")?.addEventListener("click", addAdmin);
   document.getElementById("newAdminPassword")?.addEventListener("keydown", e => {
@@ -7085,6 +7461,14 @@ function setupSuperAdminControls() {
     document.getElementById("adminAuditFilterFrom").value = "";
     document.getElementById("adminAuditFilterTo").value = "";
     renderAdminAuditLog();
+  });
+  document.getElementById("notificationSendBtn")?.addEventListener("click", sendNotification);
+  document.getElementById("notificationClearBtn")?.addEventListener("click", clearNotificationComposer);
+  document.getElementById("notificationModal")?.addEventListener("click", (event) => {
+    if (event.target === document.getElementById("notificationModal")) {
+      const [notification] = visibleNotificationsForCurrentUser();
+      if (notification) dismissNotification(notification.id);
+    }
   });
 }
 

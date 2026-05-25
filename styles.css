@@ -2032,6 +2032,137 @@ body.centre-mode .advice-entry-panel {
 
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+.notification-audience-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin-top: 16px;
+}
+
+.notification-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #d6dfeb;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: var(--ink);
+  font-size: .9rem;
+  font-weight: 600;
+}
+
+.notification-check input { margin: 0; }
+
+.notification-target-wrap {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.notification-target-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.notification-target-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notification-target-chip {
+  border: 1px solid #d6dfeb;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  padding: 7px 12px;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notification-target-chip.selected {
+  background: #15253f;
+  color: #fff;
+  border-color: #15253f;
+}
+
+.notification-card-list {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-card {
+  border: 1px solid #d6dfeb;
+  border-radius: 14px;
+  background: #fff;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.notification-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.notification-card-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.notification-card-meta {
+  color: var(--muted);
+  font-size: .82rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notification-card-message {
+  color: var(--ink);
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.notification-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: .75rem;
+  font-weight: 700;
+  background: #eaf2ff;
+  color: #20437d;
+}
+
+.notification-badge.inactive {
+  background: #f1f4f8;
+  color: #5f6f84;
+}
+
+.notification-modal {
+  max-width: 560px;
+}
+
+.notification-modal-body {
+  color: var(--ink);
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: .95rem;
+}
+
 /* ─── Unlock view panel min-height ──────────────────────────────────────── */
 
 /* ─── Audit log ──────────────────────────────────────────────────────────── */
@@ -2176,6 +2307,8 @@ body.centre-mode .advice-entry-panel {
 @media (max-width: 768px) {
   .audit-filter-grid { grid-template-columns: 1fr 1fr; }
   .audit-card-head   { flex-direction: column; }
+  .notification-audience-grid,
+  .notification-target-wrap { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
