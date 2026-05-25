@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "npx serve .",
     "build": "node --check app.js",
-    "start": "npx serve ."
+    "start": "npx serve .",
+    "smoke": "playwright test --config=playwright.config.js",
+    "smoke:headed": "playwright test --config=playwright.config.js --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
   }
 }
