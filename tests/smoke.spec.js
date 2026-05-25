@@ -99,10 +99,100 @@ test("centre petty cash entries can be added", async ({ page }) => {
   await expect(page.locator("#pettyRegisterTable tbody")).toContainText("Other Payments");
 });
 
+test("centre procedure advice entries can be added", async ({ page }) => {
+  await loginAsCentre(page);
+  await page.locator('.nav-item[data-view="advice"]').click();
+  await expect(page.locator("#adviceView")).toHaveClass(/active/);
+
+  await page.locator("#adviceDate").fill(await page.locator("#entryDate").inputValue());
+  await page.locator("#advicePatientName").fill("Smoke Test Patient");
+  await page.locator("#adviceProcedure").fill("CAG");
+  await page.locator("#adviceStatus").fill("Done here");
+  await page.locator("#adviceRemarks").fill("Procedure advice smoke test");
+  await page.locator("#adviceSubmitBtn").click();
+
+  await expect(page.locator("#toast")).toContainText(/procedure advice saved/i);
+  await expect(page.locator("#adviceTable tbody")).toContainText("Smoke Test Patient");
+});
+
 test("admin can open backup view and see backup status without crashing", async ({ page }) => {
   await loginAsAdmin(page);
   await page.locator('.nav-item[data-view="backup"]').click();
   await expect(page.locator("#backupView")).toHaveClass(/active/);
   await expect(page.locator("#backupList")).toContainText(/No database connection|No backups yet|Loading backups/i);
   await expect(page.locator("#reportDateInput")).toBeVisible();
+});
+
+test("admin csv export downloads from the export menu", async ({ page }) => {
+  await loginAsAdmin(page);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator(".topbar-actions .export-menu-button").click();
+  await page.locator('.topbar-actions [data-export-format="csv"]').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.csv$/i);
+});
+
+test("admin png export downloads from the export menu", async ({ page }) => {
+  await loginAsAdmin(page);
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator(".topbar-actions .export-menu-button").click();
+  await page.locator('.topbar-actions [data-export-format="png"]').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.png$/i);
+});
+
+test("admin professional report opens a printable popup", async ({ page }) => {
+  await loginAsAdmin(page);
+  const popupPromise = page.waitForEvent("popup");
+  await page.locator(".topbar-actions .export-menu-button").click();
+  await page.locator('.topbar-actions [data-export-format="pdf"]').click();
+  const popup = await popupPromise;
+  await popup.waitForLoadState("domcontentloaded");
+  await expect(popup.locator("body")).toContainText("KH Operations Report");
+});
+
+test("admin can export and re-import a local backup file", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.locator('.nav-item[data-view="backup"]').click();
+  await expect(page.locator("#backupView")).toHaveClass(/active/);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download Backup File" }).click();
+  const download = await downloadPromise;
+  const backupPath = await download.path();
+  expect(backupPath).toBeTruthy();
+
+  await page.locator("#reportDateInput").fill("2026-05-01");
+  await expect(page.locator("#reportDateInput")).toHaveValue("2026-05-01");
+
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.locator("#importFileInput").setInputFiles(backupPath);
+
+  await expect(page.locator("#importStatus")).toContainText(/Restore complete/i);
+  await expect(page.locator("#toast")).toContainText(/Backup restored from file/i);
+});
+
+test("invalid backup import shows an error without overwriting data", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.locator('.nav-item[data-view="backup"]').click();
+  await expect(page.locator("#backupView")).toHaveClass(/active/);
+
+  await page.locator("#importFileInput").setInputFiles({
+    name: "invalid-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from('{"invalid":true}', "utf8")
+  });
+
+  await expect(page.locator("#importStatus")).toContainText(/does not appear to be a KH backup/i);
+});
+
+test("centre advice download exports an excel file", async ({ page }) => {
+  await loginAsCentre(page);
+  await page.locator('.nav-item[data-view="advice"]').click();
+  await expect(page.locator("#adviceView")).toHaveClass(/active/);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.locator("#adviceDownloadBtn").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/i);
 });
