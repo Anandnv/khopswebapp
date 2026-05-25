@@ -4412,6 +4412,7 @@ function setupMonthSelect() {
   const monthSelect = document.getElementById("monthSelect");
   monthSelect.addEventListener("change", () => {
     const selectedMonth = monthSelect.value;
+    if (!selectedMonth) return;
     const newReportDate = lastEntryDateForMonth(selectedMonth);
     setReportDate(newReportDate);
     if (!swiztonEditingId && document.getElementById("swiztonMonth")) {
@@ -4436,6 +4437,7 @@ function setupMonthSelect() {
 function setupExportFilters() {
   refreshCenterLists();
   document.getElementById("exportMonth").addEventListener("change", (event) => {
+    if (!event.target.value) return;
     syncExportDatesToMonth(event.target.value);
     renderAdminReportPreview();
   });
@@ -4498,10 +4500,13 @@ function setupAdminControls() {
 }
 
 function syncExportDatesToMonth(month) {
-  document.getElementById("exportFromDate").value = `${month}-01`;
+  const safeMonth = /^\d{4}-\d{2}$/.test(month || "")
+    ? month
+    : (monthKey(reportDate) || todayIST().slice(0, 7));
+  document.getElementById("exportFromDate").value = `${safeMonth}-01`;
   // Use the last known entry date for this month, not the hard month-end,
   // so the export range always matches what the consolidated table shows
-  document.getElementById("exportToDate").value = lastEntryDateForMonth(month);
+  document.getElementById("exportToDate").value = lastEntryDateForMonth(safeMonth);
 }
 
 function renderAdminReportPreview() {
@@ -7488,12 +7493,13 @@ async function init() {
   const pettyMonthInput = document.getElementById("pettyMonth");
   if (pettyMonthInput) pettyMonthInput.value = today.slice(0, 7);
   const adminPettyMonthInput = document.getElementById("adminPettyMonth");
-  if (adminPettyMonthInput) adminPettyMonthInput.value = today.slice(0, 7);
+  if (adminPettyMonthInput) adminPettyMonthInput.value = monthKey(reportDate) || today.slice(0, 7);
 
-  // Sync export date range to current month so To Date is never stale
+  // Keep export controls aligned with the active report month on first load
   const currentMonth = today.slice(0, 7);
-  refreshMonthSelectors(monthKey(reportDate) || currentMonth);
-  syncExportDatesToMonth(currentMonth);
+  const reportMonth = monthKey(reportDate) || currentMonth;
+  refreshMonthSelectors(reportMonth);
+  syncExportDatesToMonth(reportMonth);
   renderCompanyTabs();
   renderConsolidated();
   setReportDate(reportDate);
