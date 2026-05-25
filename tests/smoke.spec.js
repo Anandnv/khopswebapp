@@ -206,11 +206,12 @@ test("centre advice download exports an excel file", async ({ page }) => {
 });
 
 test("super admin notifications appear on an already open centre session", async ({ browser }) => {
-  const centrePage = await browser.newPage();
+  const context = await browser.newContext();
+  const centrePage = await context.newPage();
   await gotoApp(centrePage);
   await loginAsCentre(centrePage);
 
-  const superAdminPage = await browser.newPage();
+  const superAdminPage = await context.newPage();
   await gotoApp(superAdminPage);
   await loginAsSuperAdmin(superAdminPage);
   await superAdminPage.locator('.nav-item[data-view="superadmin"]').click();
@@ -230,4 +231,5 @@ test("super admin notifications appear on an already open centre session", async
 
   await superAdminPage.close();
   await centrePage.close();
+  await context.close();
 });

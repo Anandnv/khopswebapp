@@ -7435,6 +7435,21 @@ async function refreshNotificationState(options = {}) {
 }
 
 function setupNotificationRealtime() {
+  if (notificationBroadcastChannel) {
+    notificationBroadcastChannel.close();
+    notificationBroadcastChannel = null;
+  }
+  if ("BroadcastChannel" in window) {
+    notificationBroadcastChannel = new BroadcastChannel("kh-notifications");
+    notificationBroadcastChannel.addEventListener("message", (event) => {
+      if (event.data?.type !== "notifications:update") return;
+      if (Array.isArray(event.data.notifications)) {
+        appNotifications = normalizeNotifications(event.data.notifications);
+      }
+      if (Array.isArray(event.data.admins)) admins = event.data.admins;
+      refreshNotificationUIs();
+    });
+  }
   window.addEventListener("storage", (event) => {
     if (event.key !== STORAGE_KEY || !event.newValue) return;
     try {
@@ -7445,6 +7460,12 @@ function setupNotificationRealtime() {
     } catch (error) {
       console.warn("Could not refresh notifications from local storage event:", error);
     }
+  });
+  ["visibilitychange", "focus"].forEach((eventName) => {
+    window.addEventListener(eventName, () => {
+      if (document.visibilityState === "hidden") return;
+      refreshNotificationState({ force: true });
+    });
   });
 }
 
