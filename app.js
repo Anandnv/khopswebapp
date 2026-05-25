@@ -10,17 +10,24 @@ let centers = [
 const DEFAULT_CENTERS = JSON.parse(JSON.stringify(centers));
 const COMPANY_OPTIONS = ["KH", "Swizton"];
 let activeCompany = "KH";
+const REPORT_DATE_UTILS = window.KHReportDateUtils;
+if (!REPORT_DATE_UTILS) throw new Error("KHReportDateUtils failed to load.");
+const {
+  displayDate,
+  getYesterdayIST,
+  lastEntryDateForMonth,
+  monthKey,
+  monthLabel,
+  resolveMonthOrFallback,
+  todayIST
+} = REPORT_DATE_UTILS;
 
 let currentRole = "admin"; // "superadmin" | "admin" | "centre"
 let loggedInCentreIndex = 0;
 let loggedInAdminIndex = -1; // index into admins[] for regular admin; -1 = superadmin
 let loginType = "centre";
 // Default report date = yesterday IST (morning reports cover the previous day)
-let reportDate = (() => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-})();
+let reportDate = getYesterdayIST();
 let activeCentreDashboardIndex = 0;
 const entries = {};
 // entryMeta[centreIndex][date] = { savedAt: ISO string, savedBy: centreName }
@@ -113,109 +120,99 @@ let supabaseClient = null;
 let persistenceReady = false;
 let saveTimer = null;
 let partialRestoreContext = null;
-
-function getMonthEndDate(dateStr) {
-  const d = new Date(dateStr + "T00:00:00");
-  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  return lastDay.toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Kolkata'
-  });
-}
-
-function monthKey(value) {
-  return String(value || "").slice(0, 7);
-}
-
-function monthLabel(month) {
-  if (!month) return "";
-  const date = new Date(`${month}-01T00:00:00`);
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "Asia/Kolkata"
-  });
-}
+const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
+  config: CONFIG,
+  getAdmins: () => admins,
+  getCenters: () => centers,
+  getLoginType: () => loginType,
+  setLoginType: (value) => { loginType = value; },
+  setRole
+});
+if (!AUTH_SESSION) throw new Error("KHAuthSession failed to load.");
+const {
+  loadSession,
+  login,
+  logout,
+  setupLogin,
+  sha256
+} = AUTH_SESSION;
+const PETTY_CASH_TOOLS = window.KHPettyCash?.createPettyCashTools({
+  currencySafeNumber,
+  displayDate,
+  downloadPettyCashReport,
+  escapeHtml,
+  getActiveCentreDashboardIndex: () => activeCentreDashboardIndex,
+  getCenters: () => centers,
+  getCurrentRole: () => currentRole,
+  getLoggedInCentreIndex: () => loggedInCentreIndex,
+  getPettyCash: () => pettyCash,
+  getPettyEditingId: () => pettyEditingId,
+  getReportDate: () => reportDate,
+  normalizePettyCash,
+  persistSoon,
+  pettyParticularOptions: PETTY_PARTICULAR_OPTIONS,
+  saveConfig,
+  setPettyCash: (value) => { pettyCash = value; },
+  setPettyEditingId: (value) => { pettyEditingId = value; },
+  showToast,
+  todayIST
+});
+if (!PETTY_CASH_TOOLS) throw new Error("KHPettyCash failed to load.");
+const {
+  ensurePettyCentre,
+  renderCentrePettyDetail,
+  renderPettyCashForCentre,
+  selectedAdminPettyMonth,
+  selectedPettyMonth,
+  setPettyOpeningBalance,
+  setupPettyControls
+} = PETTY_CASH_TOOLS;
+const REPORT_CONTROL_TOOLS = window.KHReportControls?.createReportControlTools({
+  displayDate,
+  downloadFilteredCsvReport,
+  downloadImageReport,
+  downloadProfessionalReport,
+  ensureCentreEntries,
+  filteredDailyRows,
+  getActiveCentreDashboardIndex: () => activeCentreDashboardIndex,
+  getActiveCentreDetailTab: () => activeCentreDetailTab,
+  getActiveCompany: () => activeCompany,
+  getAssignedCentreIndexes,
+  getCenters: () => centers,
+  getCurrentRole: () => currentRole,
+  getLoggedInCentreIndex: () => loggedInCentreIndex,
+  getReportDate: () => reportDate,
+  getSwiztonEditingId: () => swiztonEditingId,
+  lastEntryDateForMonth,
+  openCentre,
+  refreshCenterLists,
+  refreshCenterRollups,
+  renderBars,
+  renderConsolidated,
+  renderPayerSplit,
+  renderTargets,
+  reportForecast,
+  resolveMonthOrFallback,
+  setReportDate,
+  todayIST
+});
+if (!REPORT_CONTROL_TOOLS) throw new Error("KHReportControls failed to load.");
+const {
+  getExportRange,
+  getFilteredCenterIndexes,
+  renderAdminReportPreview,
+  selectedReportType,
+  setupExportFilters,
+  setupExportMenus,
+  setupMonthSelect,
+  syncExportDatesToMonth
+} = REPORT_CONTROL_TOOLS;
 
 function reportTypeLabel(type) {
   return REPORT_TYPE_LABELS[type] || REPORT_TYPE_LABELS.consolidated;
 }
 
-// ─── Security helpers ────────────────────────────────────────────────────────
-
-const SESSION_KEY = "kh-session-v1";
-const LOCKOUT_KEY = "kh-lockout-v1";
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 30_000; // 30 seconds
-
-/** SHA-256 a plaintext string → lowercase hex digest */
-async function sha256(text) {
-  const buf = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text)
-  );
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Read or create the rate-limit bucket stored in sessionStorage */
-function getLockout() {
-  try {
-    return JSON.parse(sessionStorage.getItem(LOCKOUT_KEY) || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveLockout(data) {
-  sessionStorage.setItem(LOCKOUT_KEY, JSON.stringify(data));
-}
-
-/** Returns seconds remaining in lockout, or 0 if not locked */
-function lockoutSecondsLeft() {
-  const { until = 0 } = getLockout();
-  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
-}
-
-function recordFailedAttempt() {
-  const lock = getLockout();
-  lock.attempts = (lock.attempts || 0) + 1;
-  if (lock.attempts >= MAX_ATTEMPTS) {
-    lock.until = Date.now() + LOCKOUT_MS;
-    lock.attempts = 0; // reset counter after locking
-  }
-  saveLockout(lock);
-}
-
-function resetAttempts() {
-  saveLockout({});
-}
-
-/** Persist a lightweight session token (role + centreIndex + adminIndex) in sessionStorage */
-function saveSession(role, centreIndex, adminIndex = -1) {
-  sessionStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify({ role, centreIndex, adminIndex, ts: Date.now() })
-  );
-}
-
-function clearSession() {
-  sessionStorage.removeItem(SESSION_KEY);
-}
-
-function loadSession() {
-  try {
-    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
-
 // ─── Date lock helpers ───────────────────────────────────────────────────────
-
-function todayIST() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-}
 
 /** Returns true if the date is in the past (not today) for the current centre */
 function isDateLocked(date, centreIndex) {
@@ -1156,11 +1153,6 @@ function sameMonth(dateA, dateB) {
   return dateA.slice(0, 7) === dateB.slice(0, 7);
 }
 
-function displayDate(date) {
-  const [year, month, day] = date.split("-");
-  return `${day}-${month}-${year}`;
-}
-
 function selectedMonthLabel() {
   const select = document.getElementById("monthSelect");
   return select?.options?.[select.selectedIndex]?.text || monthLabel(monthKey(reportDate));
@@ -1284,23 +1276,6 @@ function entryPayerTotals(entry) {
   );
 }
 
-function getFilteredCenterIndexes() {
-  if (currentRole === "centre") return [loggedInCentreIndex];
-  const assigned = getAssignedCentreIndexes();
-  const value = document.getElementById("exportCentre")?.value || "all";
-  if (value === "all") return assigned;
-  const idx = Number(value);
-  // Only allow selecting a centre the admin is assigned to
-  return assigned.includes(idx) ? [idx] : assigned;
-}
-
-function getExportRange() {
-  return {
-    fromDate: document.getElementById("exportFromDate").value,
-    toDate: document.getElementById("exportToDate").value
-  };
-}
-
 function filteredDailyRows() {
   const { fromDate, toDate } = getExportRange();
   const rows = [];
@@ -1368,10 +1343,6 @@ function consolidatedTotals(rows) {
     },
     { target: 0, tillYesterday: 0, today: 0, total: 0, cagToday: 0, cagTotal: 0, general: 0, kasp: 0, medisep: 0, opTotal: 0, /* ipTotal: 0, */ newOpTotal: 0, ecgTotal: 0, echoTotal: 0, tmtTotal: 0 }
   );
-}
-
-function selectedReportType() {
-  return document.getElementById("exportReportType")?.value || "consolidated";
 }
 
 function normalizePettyCash(value = {}) {
@@ -1499,13 +1470,6 @@ function refreshMonthSelectors(selectedMonth = monthKey(reportDate)) {
   populateMonthSelect("exportMonth", document.getElementById("exportMonth")?.value || selectedMonth);
 }
 
-function ensurePettyCentre(centreIndex) {
-  pettyCash = normalizePettyCash(pettyCash);
-  if (!pettyCash.balances[centreIndex]) pettyCash.balances[centreIndex] = {};
-  if (!Array.isArray(pettyCash.entries[centreIndex])) pettyCash.entries[centreIndex] = [];
-  return pettyCash.entries[centreIndex];
-}
-
 function ensureAdviceCentre(centreIndex) {
   procedureAdvice = normalizeProcedureAdviceStore(procedureAdvice);
   if (!Array.isArray(procedureAdvice[centreIndex])) procedureAdvice[centreIndex] = [];
@@ -1523,335 +1487,6 @@ function selectedAdviceStatus() {
 function selectedAdviceCentreFilter() {
   if (currentRole === "centre") return String(loggedInCentreIndex);
   return document.getElementById("adviceCentreFilter")?.value || "all";
-}
-
-function selectedPettyMonth() {
-  return document.getElementById("pettyMonth")?.value || todayIST().slice(0, 7);
-}
-
-function selectedAdminPettyMonth() {
-  return document.getElementById("adminPettyMonth")?.value || document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
-}
-
-function getPettyOpeningBalance(centreIndex, month) {
-  ensurePettyCentre(centreIndex);
-  return currencySafeNumber(pettyCash.balances[centreIndex]?.[month]);
-}
-
-function setPettyOpeningBalance(centreIndex, month, amount) {
-  ensurePettyCentre(centreIndex);
-  pettyCash.balances[centreIndex][month] = currencySafeNumber(amount);
-}
-
-function getPettyEntries(centreIndex, month = "") {
-  return ensurePettyCentre(centreIndex)
-    .filter((entry) => !month || (entry.date || "").slice(0, 7) === month)
-    .sort((a, b) =>
-      (a.date || "").localeCompare(b.date || "") ||
-      (a.createdAt || "").localeCompare(b.createdAt || "") ||
-      String(a.id).localeCompare(String(b.id))
-    );
-}
-
-function pettyRegisterRows(centreIndex, month) {
-  const rows = [];
-  let balance = getPettyOpeningBalance(centreIndex, month);
-  rows.push({
-    slNo: 1,
-    date: "",
-    particulars: "Opening Balance",
-    voucherNo: "",
-    receipts: 0,
-    payments: 0,
-    balance,
-    remarks: "",
-    isOpening: true
-  });
-  getPettyEntries(centreIndex, month).forEach((entry, index) => {
-    const receipts = currencySafeNumber(entry.receipts);
-    const payments = currencySafeNumber(entry.payments);
-    balance += receipts - payments;
-    rows.push({
-      ...entry,
-      slNo: index + 2,
-      receipts,
-      payments,
-      balance
-    });
-  });
-  return rows;
-}
-
-function pettyTotals(centreIndex, month) {
-  const entriesForMonth = getPettyEntries(centreIndex, month);
-  const opening = getPettyOpeningBalance(centreIndex, month);
-  const receipts = entriesForMonth.reduce((sum, entry) => sum + currencySafeNumber(entry.receipts), 0);
-  const payments = entriesForMonth.reduce((sum, entry) => sum + currencySafeNumber(entry.payments), 0);
-  return {
-    opening,
-    receipts,
-    payments,
-    closing: opening + receipts - payments,
-    count: entriesForMonth.length
-  };
-}
-
-function formatPettyAmount(value, blankZero = true) {
-  const amount = currencySafeNumber(value);
-  if (blankZero && amount === 0) return "";
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function renderPettyParticularOptions() {
-  document.querySelectorAll("[data-petty-particular-options]").forEach((list) => {
-    list.innerHTML = PETTY_PARTICULAR_OPTIONS
-      .map((option) => `<option value="${escapeHtml(option)}"></option>`)
-      .join("");
-  });
-}
-
-function renderPettySummary(summaryId, centreIndex, month) {
-  const summary = document.getElementById(summaryId);
-  if (!summary) return;
-  const totals = pettyTotals(centreIndex, month);
-  summary.innerHTML = `
-    <div><span>Opening Balance</span><strong>${formatPettyAmount(totals.opening, false)}</strong></div>
-    <div><span>Receipts</span><strong>${formatPettyAmount(totals.receipts, false)}</strong></div>
-    <div><span>Total Expense</span><strong>${formatPettyAmount(totals.payments, false)}</strong></div>
-    <div><span>Closing Balance</span><strong>${formatPettyAmount(totals.closing, false)}</strong></div>
-  `;
-}
-
-function renderPettyRegister(tableId, centreIndex, month, options = {}) {
-  const table = document.getElementById(tableId);
-  if (!table || !centers[centreIndex]) return;
-  const editable = options.editable === true;
-  const tbody = table.querySelector("tbody");
-  const tfoot = table.querySelector("tfoot");
-  const rows = pettyRegisterRows(centreIndex, month);
-  tbody.innerHTML = rows.map((row) => {
-    const actionCell = editable
-      ? row.isOpening
-        ? `<td class="petty-actions-cell"></td>`
-        : `<td class="petty-actions-cell">
-            <button class="text-button" type="button" data-petty-edit="${row.id}">Edit</button>
-            <button class="text-button danger" type="button" data-petty-delete="${row.id}">Delete</button>
-          </td>`
-      : "";
-    return `
-      <tr class="${row.isOpening ? "petty-opening-row" : ""}">
-        <td>${row.slNo}</td>
-        <td>${row.date ? displayDate(row.date) : ""}</td>
-        <td>${escapeHtml(row.particulars || "")}</td>
-        <td>${escapeHtml(row.voucherNo || "")}</td>
-        <td class="petty-amount">${formatPettyAmount(row.receipts)}</td>
-        <td class="petty-amount">${formatPettyAmount(row.payments)}</td>
-        <td class="petty-amount">${formatPettyAmount(row.balance, false)}</td>
-        <td>${escapeHtml(row.remarks || "")}</td>
-        ${actionCell}
-      </tr>
-    `;
-  }).join("");
-
-  const totals = pettyTotals(centreIndex, month);
-  const colspan = editable ? 5 : 5;
-  tfoot.innerHTML = `
-    <tr>
-      <td colspan="${colspan}">Total expense</td>
-      <td class="petty-amount">${formatPettyAmount(totals.payments, false)}</td>
-      <td></td>
-      <td></td>
-      ${editable ? "<td></td>" : ""}
-    </tr>
-  `;
-
-  if (options.summaryId) renderPettySummary(options.summaryId, centreIndex, month);
-
-  if (editable) {
-    tbody.querySelectorAll("[data-petty-edit]").forEach((button) => {
-      button.addEventListener("click", () => editPettyEntry(button.dataset.pettyEdit));
-    });
-    tbody.querySelectorAll("[data-petty-delete]").forEach((button) => {
-      button.addEventListener("click", () => deletePettyEntry(button.dataset.pettyDelete));
-    });
-  }
-}
-
-function renderPettyCashForCentre() {
-  if (currentRole !== "centre") return;
-  const centre = centers[loggedInCentreIndex];
-  if (!centre) return;
-  const monthInput = document.getElementById("pettyMonth");
-  const month = monthInput?.value || todayIST().slice(0, 7);
-  if (monthInput && !monthInput.value) monthInput.value = month;
-  const dateInput = document.getElementById("pettyDate");
-  if (dateInput && !dateInput.value) dateInput.value = todayIST();
-  document.getElementById("pettyCentreName").textContent = `${centre.name} Petty Cash`;
-  document.getElementById("pettyLockedCentreName").textContent = centre.name;
-  const balanceInput = document.getElementById("pettyOpeningBalance");
-  if (balanceInput && document.activeElement !== balanceInput) {
-    balanceInput.value = getPettyOpeningBalance(loggedInCentreIndex, month);
-  }
-  renderPettyRegister("pettyRegisterTable", loggedInCentreIndex, month, {
-    editable: true,
-    summaryId: "pettySummary"
-  });
-}
-
-function renderCentrePettyDetail() {
-  const centre = centers[activeCentreDashboardIndex];
-  if (!centre) return;
-  const monthInput = document.getElementById("adminPettyMonth");
-  const month = monthInput?.value || document.getElementById("monthSelect")?.value || reportDate.slice(0, 7);
-  if (monthInput && !monthInput.value) monthInput.value = month;
-  document.getElementById("adminPettyCentreName").textContent = `${centre.name} Petty Cash`;
-  renderPettyRegister("adminPettyRegisterTable", activeCentreDashboardIndex, month, {
-    editable: false,
-    summaryId: "adminPettySummary"
-  });
-}
-
-function resetPettyForm(resetDate = false) {
-  pettyEditingId = null;
-  const idInput = document.getElementById("pettyEntryId");
-  if (idInput) idInput.value = "";
-  document.getElementById("pettyFormTitle").textContent = "Add Petty Entry";
-  document.getElementById("pettySubmitBtn").textContent = "Add Entry";
-  document.getElementById("pettyCancelEditBtn").classList.add("hidden");
-  if (resetDate) document.getElementById("pettyDate").value = todayIST();
-  ["pettyParticulars", "pettyVoucherNo", "pettyReceipts", "pettyPayments", "pettyRemarks"].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.value = "";
-  });
-}
-
-function savePettyOpeningBalance() {
-  if (currentRole !== "centre") {
-    showToast("Admins can view petty cash, but only centres can enter it.");
-    return;
-  }
-  const month = selectedPettyMonth();
-  const amount = currencySafeNumber(document.getElementById("pettyOpeningBalance").value);
-  setPettyOpeningBalance(loggedInCentreIndex, month, amount);
-  persistSoon();
-  renderPettyCashForCentre();
-  showToast("Opening balance saved");
-}
-
-function savePettyEntry() {
-  if (currentRole !== "centre") {
-    showToast("Admins can view petty cash, but only centres can enter it.");
-    return;
-  }
-  const date = document.getElementById("pettyDate").value;
-  const particulars = document.getElementById("pettyParticulars").value.trim();
-  const voucherNo = document.getElementById("pettyVoucherNo").value.trim();
-  const receipts = currencySafeNumber(document.getElementById("pettyReceipts").value);
-  const payments = currencySafeNumber(document.getElementById("pettyPayments").value);
-  const remarks = document.getElementById("pettyRemarks").value.trim();
-
-  if (!date || !particulars) {
-    showToast("Enter the date and particulars.");
-    return;
-  }
-  if (receipts < 0 || payments < 0) {
-    showToast("Receipts and payments cannot be negative.");
-    return;
-  }
-  if (receipts > 0 && payments > 0) {
-    showToast("Use either receipts or payments for one row, not both.");
-    return;
-  }
-  if (receipts === 0 && payments === 0) {
-    showToast("Enter a receipt or payment amount.");
-    return;
-  }
-
-  const month = date.slice(0, 7);
-  const monthInput = document.getElementById("pettyMonth");
-  if (monthInput && monthInput.value !== month) monthInput.value = month;
-  const entriesForCentre = ensurePettyCentre(loggedInCentreIndex);
-  const payload = {
-    date,
-    particulars,
-    voucherNo,
-    receipts,
-    payments,
-    remarks,
-    updatedAt: new Date().toISOString(),
-    updatedBy: centers[loggedInCentreIndex]?.name || "Centre"
-  };
-
-  if (pettyEditingId) {
-    const existing = entriesForCentre.find((entry) => String(entry.id) === String(pettyEditingId));
-    if (existing) Object.assign(existing, payload);
-  } else {
-    entriesForCentre.push({
-      id: `${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      ...payload,
-      createdAt: new Date().toISOString()
-    });
-  }
-
-  persistSoon();
-  resetPettyForm(false);
-  renderPettyCashForCentre();
-  showToast("Petty entry saved");
-}
-
-function editPettyEntry(entryId) {
-  const entry = ensurePettyCentre(loggedInCentreIndex).find((item) => String(item.id) === String(entryId));
-  if (!entry) return;
-  pettyEditingId = entry.id;
-  document.getElementById("pettyEntryId").value = entry.id;
-  document.getElementById("pettyFormTitle").textContent = "Edit Petty Entry";
-  document.getElementById("pettySubmitBtn").textContent = "Update Entry";
-  document.getElementById("pettyCancelEditBtn").classList.remove("hidden");
-  document.getElementById("pettyMonth").value = (entry.date || todayIST()).slice(0, 7);
-  document.getElementById("pettyDate").value = entry.date || todayIST();
-  document.getElementById("pettyParticulars").value = entry.particulars || "";
-  document.getElementById("pettyVoucherNo").value = entry.voucherNo || "";
-  document.getElementById("pettyReceipts").value = entry.receipts || "";
-  document.getElementById("pettyPayments").value = entry.payments || "";
-  document.getElementById("pettyRemarks").value = entry.remarks || "";
-  renderPettyCashForCentre();
-}
-
-function deletePettyEntry(entryId) {
-  const ok = window.confirm("Delete this petty cash entry?");
-  if (!ok) return;
-  const entriesForCentre = ensurePettyCentre(loggedInCentreIndex);
-  pettyCash.entries[loggedInCentreIndex] = entriesForCentre.filter((entry) => String(entry.id) !== String(entryId));
-  if (String(pettyEditingId) === String(entryId)) resetPettyForm(false);
-  saveConfig().catch((err) => {
-    console.error("adminSaveEntry config sync failed:", err);
-  });
-  renderPettyCashForCentre();
-  showToast("Petty entry deleted");
-}
-
-function setupPettyControls() {
-  renderPettyParticularOptions();
-  document.getElementById("pettyMonth")?.addEventListener("change", () => {
-    resetPettyForm(false);
-    renderPettyCashForCentre();
-  });
-  document.getElementById("pettyOpeningBalance")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") savePettyOpeningBalance();
-  });
-  document.getElementById("pettySaveBalanceBtn")?.addEventListener("click", savePettyOpeningBalance);
-  document.getElementById("pettySubmitBtn")?.addEventListener("click", savePettyEntry);
-  document.getElementById("pettyCancelEditBtn")?.addEventListener("click", () => {
-    resetPettyForm(true);
-    renderPettyCashForCentre();
-  });
-  document.getElementById("pettyDownloadBtn")?.addEventListener("click", () => {
-    downloadPettyCashReport(loggedInCentreIndex, selectedPettyMonth());
-  });
-  document.getElementById("adminPettyMonth")?.addEventListener("change", renderCentrePettyDetail);
-  document.getElementById("adminPettyDownloadBtn")?.addEventListener("click", () => {
-    downloadPettyCashReport(activeCentreDashboardIndex, selectedAdminPettyMonth());
-  });
 }
 
 function adviceDoctorOptions() {
@@ -4342,135 +3977,9 @@ function closeSidebar() {
   if (toggle) toggle.innerHTML = "&#9776;";
 }
 
-function setupLogin() {
-  const centreSelect = document.getElementById("loginCentre");
-  centreSelect.innerHTML = centers
-    .map((center, index) => ({ center, index }))
-    .filter(({ center }) => (center.company || "KH") === "KH")
-    .map(({ center, index }) => `<option value="${index}">${center.name}</option>`)
-    .join("");
-
-  // Live lockout countdown
-  setInterval(() => {
-    const secs = lockoutSecondsLeft();
-    const el = document.getElementById("loginLockout");
-    const btn = document.getElementById("loginBtn");
-    if (!el) return;
-    if (secs > 0) {
-      el.textContent = `Login locked — too many failed attempts. Try again in ${secs}s.`;
-      el.classList.remove("hidden");
-      btn.disabled = true;
-    } else {
-      el.classList.add("hidden");
-      btn.disabled = false;
-    }
-  }, 500);
-
-  document.querySelectorAll(".login-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      loginType = tab.dataset.loginType;
-      document.querySelectorAll(".login-tab").forEach((item) => item.classList.toggle("active", item === tab));
-      document.querySelector(".centre-login-field").classList.toggle("hidden", loginType !== "centre");
-      document.querySelector(".admin-login-field").classList.toggle("hidden", loginType !== "admin");
-      document.getElementById("loginPassword").value = "";
-      document.getElementById("loginError").textContent = "";
-    });
-  });
-
-  document.getElementById("loginBtn").addEventListener("click", () => login());
-  document.getElementById("loginPassword").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") login();
-  });
-  document.getElementById("logoutBtn").addEventListener("click", logout);
-}
-
 function setupEntryDate() {
   document.getElementById("entryDate").addEventListener("change", () => {
     renderEntryForCurrentDate();
-  });
-}
-
-function lastEntryDateForMonth(month) {
-  // Find the latest date across all centres that has data in this month
-  let latest = "";
-  centers.forEach((_, index) => {
-    const centreEntries = ensureCentreEntries(index);
-    Object.keys(centreEntries)
-      .filter((d) => d.slice(0, 7) === month)
-      .forEach((d) => { if (d > latest) latest = d; });
-  });
-  // Fall back to today if it's the current month, else month-end
-  if (!latest) {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    if (today.slice(0, 7) === month) return today;
-    return getMonthEndDate(month + "-01");
-  }
-  return latest;
-}
-
-function setupMonthSelect() {
-  const monthSelect = document.getElementById("monthSelect");
-  monthSelect.addEventListener("change", () => {
-    const selectedMonth = monthSelect.value;
-    if (!selectedMonth) return;
-    const newReportDate = lastEntryDateForMonth(selectedMonth);
-    setReportDate(newReportDate);
-    if (!swiztonEditingId && document.getElementById("swiztonMonth")) {
-      document.getElementById("swiztonMonth").value = selectedMonth;
-    }
-    document.getElementById("exportMonth").value = selectedMonth;
-    syncExportDatesToMonth(selectedMonth);
-    refreshCenterRollups(reportDate);
-    renderConsolidated();
-    renderBars();
-    renderPayerSplit();
-    renderTargets();
-    renderAdminReportPreview();
-    const adminPettyMonth = document.getElementById("adminPettyMonth");
-    if (adminPettyMonth) adminPettyMonth.value = selectedMonth;
-    if (document.getElementById("centreView").classList.contains("active")) {
-      openCentre(activeCentreDashboardIndex, activeCentreDetailTab);
-    }
-  });
-}
-
-function setupExportFilters() {
-  refreshCenterLists();
-  document.getElementById("exportMonth").addEventListener("change", (event) => {
-    if (!event.target.value) return;
-    syncExportDatesToMonth(event.target.value);
-    renderAdminReportPreview();
-  });
-  ["exportCentre", "exportReportType", "exportFromDate", "exportToDate"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", renderAdminReportPreview);
-  });
-}
-
-function setupExportMenus() {
-  document.querySelectorAll(".export-menu-button").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const dropdown = button.nextElementSibling;
-      document.querySelectorAll(".export-dropdown").forEach((menu) => {
-        if (menu !== dropdown) menu.classList.add("hidden");
-      });
-      dropdown.classList.toggle("hidden");
-    });
-  });
-
-  document.querySelectorAll("[data-export-format]").forEach((button) => {
-    button.addEventListener("click", () => {
-      document.querySelectorAll(".export-dropdown").forEach((menu) => menu.classList.add("hidden"));
-      const format = button.dataset.exportFormat;
-      if (format === "pdf") downloadProfessionalReport();
-      if (format === "csv") downloadFilteredCsvReport();
-      if (format === "png") downloadImageReport("png");
-      if (format === "jpg") downloadImageReport("jpg");
-    });
-  });
-
-  document.addEventListener("click", () => {
-    document.querySelectorAll(".export-dropdown").forEach((menu) => menu.classList.add("hidden"));
   });
 }
 
@@ -4496,64 +4005,6 @@ function setupAdminControls() {
   document.getElementById("unlockModalSubmit")?.addEventListener("click", submitUnlockRequest);
   document.getElementById("unlockModal")?.addEventListener("click", (e) => {
     if (e.target === document.getElementById("unlockModal")) closeUnlockModal();
-  });
-}
-
-function syncExportDatesToMonth(month) {
-  const safeMonth = /^\d{4}-\d{2}$/.test(month || "")
-    ? month
-    : (monthKey(reportDate) || todayIST().slice(0, 7));
-  document.getElementById("exportFromDate").value = `${safeMonth}-01`;
-  // Use the last known entry date for this month, not the hard month-end,
-  // so the export range always matches what the consolidated table shows
-  document.getElementById("exportToDate").value = lastEntryDateForMonth(safeMonth);
-}
-
-function renderAdminReportPreview() {
-  if (activeCompany === "Swizton") {
-    const chart = document.getElementById("adminTrendChart");
-    if (chart) chart.innerHTML = `<p>No Swizton performance entries for this filter.</p>`;
-    const forecast = document.getElementById("forecastCard");
-    if (forecast) {
-      forecast.innerHTML = `
-        <span>Swizton Report Model</span>
-        <strong>Leads & Advices</strong>
-        <small>Swizton reporting follows the uploaded workbook format: Leads, OP seen, Advices, and Procedure Done split by UFE and Vericose.</small>
-      `;
-    }
-    return;
-  }
-
-  const rows = filteredDailyRows();
-  const forecast = reportForecast(rows);
-  renderAdminTrend(rows);
-  document.getElementById("forecastCard").innerHTML = `
-    <span>Projected Intervention</span>
-    <strong>${forecast.projected}</strong>
-    <small>${forecast.projectedAchievement}% projected achievement against target ${forecast.selectedTarget}. Required run rate: ${forecast.requiredPerDay.toFixed(1)} per remaining day. Use CSV / Excel for raw data, Professional PDF for management presentation.</small>
-  `;
-}
-
-function renderAdminTrend(rows) {
-  const chart = document.getElementById("adminTrendChart");
-  const byDate = rows.reduce((acc, row) => {
-    acc[row.date] = (acc[row.date] || 0) + row.intervention;
-    return acc;
-  }, {});
-  const values = Object.entries(byDate);
-  chart.innerHTML = "";
-  if (!values.length) {
-    chart.innerHTML = `<p>No saved data for this filter.</p>`;
-    return;
-  }
-  const max = Math.max(...values.map(([, value]) => value), 1);
-  values.forEach(([date, value]) => {
-    const bar = document.createElement("div");
-    bar.className = "trend-bar";
-    bar.style.height = `${Math.max(12, (value / max) * 140)}px`;
-    bar.title = `${displayDate(date)}: ${value}`;
-    bar.innerHTML = `<span>${date.slice(-2)}</span>`;
-    chart.appendChild(bar);
   });
 }
 
@@ -5510,127 +4961,6 @@ function downloadSelectedMonthReport() {
   link.remove();
   URL.revokeObjectURL(url);
   showToast(`${month} report downloaded`);
-}
-
-async function login() {
-  const error = document.getElementById("loginError");
-
-  // Brute-force check
-  const wait = lockoutSecondsLeft();
-  if (wait > 0) {
-    error.textContent = `Too many failed attempts. Try again in ${wait}s.`;
-    return;
-  }
-
-  const passwordRaw = document.getElementById("loginPassword").value;
-  if (!passwordRaw) {
-    error.textContent = "Please enter a password.";
-    return;
-  }
-  const passwordHash = await sha256(passwordRaw);
-  const centreIndex = Number(document.getElementById("loginCentre").value);
-  error.textContent = "";
-
-  // ── Super Admin ──
-  if (loginType === "superadmin") {
-    const superHash = CONFIG.superAdminPasswordHash || await sha256("superadmin123");
-    if (passwordHash !== superHash) {
-      recordFailedAttempt();
-      const remaining = lockoutSecondsLeft();
-      error.textContent = remaining > 0
-        ? `Too many failed attempts. Locked for ${remaining}s.`
-        : "Invalid super admin password.";
-      return;
-    }
-    resetAttempts();
-    saveSession("superadmin", -1, -1);
-    document.getElementById("loginScreen").classList.add("hidden");
-    document.getElementById("appShell").classList.remove("hidden");
-    setRole("superadmin");
-    return;
-  }
-
-  // ── Admin (by username + password) ──
-  if (loginType === "admin") {
-    const adminUsername = document.getElementById("loginAdminUsername")?.value?.trim() || "";
-
-    // ── Hidden Super Admin access (username + password combination) ──
-    // Not shown in UI — accessed via the Admin tab with special credentials.
-    // Credentials are stored only as hashes in config.js — no plaintext anywhere.
-    const hiddenSuperHash = CONFIG.superAdminPasswordHash;
-    const hiddenSuperUser = CONFIG.superAdminUsername;
-    if (hiddenSuperHash && hiddenSuperUser && adminUsername === hiddenSuperUser && passwordHash === hiddenSuperHash) {
-      resetAttempts();
-      saveSession("superadmin", -1, -1);
-      document.getElementById("loginScreen").classList.add("hidden");
-      document.getElementById("appShell").classList.remove("hidden");
-      setRole("superadmin");
-      return;
-    }
-
-    // First check if it's a named admin account
-    const matchedAdminIdx = admins.findIndex(a => a.username === adminUsername);
-    if (matchedAdminIdx >= 0) {
-      const admin = admins[matchedAdminIdx];
-      const storedHash = admin.passwordHash || await sha256(admin.password || "");
-      if (passwordHash !== storedHash) {
-        recordFailedAttempt();
-        const remaining = lockoutSecondsLeft();
-        error.textContent = remaining > 0
-          ? `Too many failed attempts. Locked for ${remaining}s.`
-          : "Invalid admin password.";
-        return;
-      }
-      resetAttempts();
-      saveSession("admin", -1, matchedAdminIdx);
-      document.getElementById("loginScreen").classList.add("hidden");
-      document.getElementById("appShell").classList.remove("hidden");
-      setRole("admin", -1, matchedAdminIdx);
-      return;
-    }
-
-    // Legacy: single admin password from CONFIG (no username match needed)
-    const adminHash = CONFIG.adminPasswordHash || await sha256("admin123");
-    if (passwordHash !== adminHash) {
-      recordFailedAttempt();
-      const remaining = lockoutSecondsLeft();
-      error.textContent = remaining > 0
-        ? `Too many failed attempts. Locked for ${remaining}s.`
-        : "Invalid admin credentials.";
-      return;
-    }
-    resetAttempts();
-    saveSession("admin", -1, -1);
-    document.getElementById("loginScreen").classList.add("hidden");
-    document.getElementById("appShell").classList.remove("hidden");
-    setRole("admin", -1, -1);
-    return;
-  }
-
-  // ── Centre login ──
-  const centre = centers[centreIndex];
-  const storedCredential = centre.passwordHash || await sha256(centre.password || "");
-  if (passwordHash !== storedCredential) {
-    recordFailedAttempt();
-    const remaining = lockoutSecondsLeft();
-    error.textContent = remaining > 0
-      ? `Too many failed attempts. Locked for ${remaining}s.`
-      : "Invalid centre password.";
-    return;
-  }
-  resetAttempts();
-  saveSession("centre", centreIndex);
-  document.getElementById("loginScreen").classList.add("hidden");
-  document.getElementById("appShell").classList.remove("hidden");
-  setRole("centre", centreIndex);
-}
-
-function logout() {
-  clearSession();
-  document.getElementById("appShell").classList.add("hidden");
-  document.getElementById("loginScreen").classList.remove("hidden");
-  document.getElementById("loginPassword").value = "";
-  document.getElementById("loginError").textContent = "";
 }
 
 function showToast(message) {
@@ -8071,3 +7401,4 @@ function setupAdminEditDataTab() {
 }
 
 init();
+
