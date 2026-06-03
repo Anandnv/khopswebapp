@@ -149,6 +149,42 @@ test("admin png export downloads from the export menu", async ({ page }) => {
   expect(download.suggestedFilename()).toMatch(/\.png$/i);
 });
 
+test("panel png capture flattens sticky table cells before rendering", async ({ page }) => {
+  await loginAsAdmin(page);
+  await page.evaluate(() => {
+    window.__captureMeta = null;
+    window.html2canvas = async (el) => {
+      const footerCell = el.querySelector("#consolidatedTable tfoot td");
+      const headerCell = el.querySelector("#consolidatedTable thead th");
+      const firstColumnCell = el.querySelector("#consolidatedTable tbody td");
+      window.__captureMeta = {
+        footerPosition: footerCell?.style.position || "",
+        footerBottom: footerCell?.style.bottom || "",
+        headerPosition: headerCell?.style.position || "",
+        headerTop: headerCell?.style.top || "",
+        firstColumnPosition: firstColumnCell?.style.position || "",
+        firstColumnLeft: firstColumnCell?.style.left || ""
+      };
+      return {
+        toDataURL: () => "data:image/png;base64,AA=="
+      };
+    };
+  });
+
+  await page.locator('[data-capture="procedurePanel"]').click();
+
+  await expect.poll(async () => {
+    return page.evaluate(() => window.__captureMeta);
+  }).toMatchObject({
+    footerPosition: "static",
+    footerBottom: "auto",
+    headerPosition: "static",
+    headerTop: "auto",
+    firstColumnPosition: "static",
+    firstColumnLeft: "auto"
+  });
+});
+
 test("admin professional report opens a printable popup", async ({ page }) => {
   await loginAsAdmin(page);
   const popupPromise = page.waitForEvent("popup");

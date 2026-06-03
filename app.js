@@ -7527,6 +7527,18 @@ async function capturePanel(panelId) {
   const savedPanelOverflow = el.style.overflow;
   const savedPanelWidth    = el.style.width;
   const savedPanelMaxWidth = el.style.maxWidth;
+  const stickyCells = Array.from(
+    el.querySelectorAll(".data-table th, .data-table td:first-child, .data-table tfoot td")
+  );
+  const savedStickyStyles = stickyCells.map(cell => ({
+    el: cell,
+    position: cell.style.position,
+    top: cell.style.top,
+    right: cell.style.right,
+    bottom: cell.style.bottom,
+    left: cell.style.left,
+    zIndex: cell.style.zIndex
+  }));
 
   // Unlock every scroll container so the full table is rendered
   scrollWrappers.forEach(w => {
@@ -7539,6 +7551,15 @@ async function capturePanel(panelId) {
   el.style.overflow = "visible";
   el.style.width    = "max-content";
   el.style.maxWidth = "none";
+  // html2canvas can skip sticky footer/header cells, so flatten them for capture.
+  stickyCells.forEach(cell => {
+    cell.style.position = "static";
+    cell.style.top = "auto";
+    cell.style.right = "auto";
+    cell.style.bottom = "auto";
+    cell.style.left = "auto";
+    cell.style.zIndex = "auto";
+  });
 
   // Force a reflow so the browser recalculates layout before we measure
   void el.offsetWidth;
@@ -7587,6 +7608,14 @@ async function capturePanel(panelId) {
     el.style.overflow = savedPanelOverflow;
     el.style.width    = savedPanelWidth;
     el.style.maxWidth = savedPanelMaxWidth;
+    savedStickyStyles.forEach(style => {
+      style.el.style.position = style.position;
+      style.el.style.top = style.top;
+      style.el.style.right = style.right;
+      style.el.style.bottom = style.bottom;
+      style.el.style.left = style.left;
+      style.el.style.zIndex = style.zIndex;
+    });
     if (btn) { btn.textContent = originalText; btn.disabled = false; }
   }
 }
