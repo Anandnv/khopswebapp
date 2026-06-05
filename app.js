@@ -3227,8 +3227,27 @@ function totalFor(center) {
   return center.tillDate + center.yesterday;
 }
 
-function percentFor(center) {
-  return center.target ? Math.round((totalFor(center) / center.target) * 100) : 0;
+function calendarDaysInMonth(date) {
+  const [year, month] = String(date || reportDate).split("-").map(Number);
+  if (!year || !month) return 30;
+  return new Date(year, month, 0).getDate();
+}
+
+function elapsedCalendarDays(date) {
+  const day = Number(String(date || reportDate).slice(8, 10));
+  const monthDays = calendarDaysInMonth(date);
+  return Math.min(Math.max(day || 1, 1), monthDays);
+}
+
+function targetTillDate(target, date = reportDate) {
+  const monthlyTarget = currencySafeNumber(target);
+  if (!monthlyTarget) return 0;
+  return (monthlyTarget / calendarDaysInMonth(date)) * elapsedCalendarDays(date);
+}
+
+function percentFor(center, date = reportDate) {
+  const expectedTarget = targetTillDate(center.target, date);
+  return expectedTarget ? Math.round((totalFor(center) / expectedTarget) * 100) : 0;
 }
 
 function statusClass(percent) {
