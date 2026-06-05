@@ -125,6 +125,7 @@ let remoteNotificationRefreshBusy = false;
 let lastRemoteConfigUpdatedAt = "";
 let notificationBroadcastChannel = null;
 let remoteAppRefreshBusy = false;
+let supabaseRealtimeChannel = null;
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
   config: CONFIG,
   getAdmins: () => admins,
@@ -908,6 +909,62 @@ async function refreshRemoteCentreState() {
   } catch (error) {
     console.warn("Remote centre refresh failed:", error);
   }
+}
+
+function applyRemoteUiRefresh() {
+  refreshCenterRollups(reportDate);
+  renderConsolidated();
+  renderProcedureAdviceView();
+  renderAdminReportPreview();
+  renderNotificationPopup();
+
+  if (currentRole === "centre") {
+    renderEntryForCurrentDate();
+    renderPettyCashForCentre();
+    return;
+  }
+
+  refreshCenterLists();
+  renderUnlockRequests();
+  renderPendingAlert();
+  if (currentRole === "superadmin") renderAdminList();
+}
+
+function setupSupabaseRealtime() {
+  if (!supabaseClient || typeof supabaseClient.channel !== "function") return;
+
+  if (supabaseRealtimeChannel && typeof supabaseClient.removeChannel === "function") {
+    supabaseClient.removeChannel(supabaseRealtimeChannel);
+    supabaseRealtimeChannel = null;
+  }
+
+  supabaseRealtimeChannel = supabaseClient
+    .channel("kh-live-app-config")
+    .on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "app_config",
+        filter: "id=eq.main"
+      },
+      async () => {
+        if (document.visibilityState === "hidden") return;
+        if (currentRole === "centre" && hasFocusedEditableElement()) return;
+        try {
+          const refreshed = await loadFromSupabase();
+          if (!refreshed) return;
+          applyRemoteUiRefresh();
+        } catch (error) {
+          console.warn("Supabase realtime refresh failed:", error);
+        }
+      }
+    )
+    .subscribe((status) => {
+      if (status === "CHANNEL_ERROR") {
+        console.warn("Supabase realtime channel error for app_config updates.");
+      }
+    });
 }
 
 async function persistProcedureAdviceChanges() {
@@ -7060,6 +7117,7 @@ async function ensureDailyBackup() {
 
 async function init() {
   const loadedState = await setupPersistence();
+  setupSupabaseRealtime();
   ensureCenterCompanies();
   const bootstrappedDefaults = ensureBootstrapData();
   await ensureDailyBackup();
