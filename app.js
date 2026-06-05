@@ -971,7 +971,24 @@ async function persistProcedureAdviceChanges() {
   saveLocalBackup();
   if (!supabaseClient) return true;
   try {
-    await saveConfig();
+    procedureAdvice = normalizeProcedureAdviceStore(procedureAdvice);
+    const { data, error } = await supabaseClient
+      .from("app_config")
+      .update({
+        procedure_advice: procedureAdvice,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", "main")
+      .select("procedure_advice, updated_at")
+      .single();
+
+    if (error) throw error;
+    if (data?.procedure_advice && typeof data.procedure_advice === "object") {
+      procedureAdvice = normalizeProcedureAdviceStore(data.procedure_advice);
+    }
+    if (data?.updated_at) {
+      lastRemoteConfigUpdatedAt = data.updated_at;
+    }
     return true;
   } catch (error) {
     console.error("Procedure advice cloud sync failed:", error);
