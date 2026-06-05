@@ -126,6 +126,7 @@ let lastRemoteConfigUpdatedAt = "";
 let notificationBroadcastChannel = null;
 let remoteAppRefreshBusy = false;
 let supabaseRealtimeChannel = null;
+let appConfigSaveQueue = Promise.resolve();
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
   config: CONFIG,
   getAdmins: () => admins,
@@ -874,9 +875,15 @@ function hasFocusedEditableElement() {
   return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
 }
 
+function isLoginScreenActive() {
+  const loginScreen = document.getElementById("loginScreen");
+  return !!loginScreen && !loginScreen.classList.contains("hidden");
+}
+
 async function refreshRemoteAdminState() {
   if (!supabaseClient || remoteAppRefreshBusy) return;
   if (document.visibilityState === "hidden") return;
+  if (isLoginScreenActive()) return;
 
   remoteAppRefreshBusy = true;
   try {
@@ -950,6 +957,7 @@ function setupSupabaseRealtime() {
       },
       async () => {
         if (document.visibilityState === "hidden") return;
+        if (isLoginScreenActive()) return;
         if (currentRole === "centre" && hasFocusedEditableElement()) return;
         try {
           const refreshed = await loadFromSupabase();
@@ -967,12 +975,19 @@ function setupSupabaseRealtime() {
     });
 }
 
+function enqueueAppConfigSave(operation) {
+  const run = appConfigSaveQueue.then(operation, operation);
+  appConfigSaveQueue = run.catch(() => {});
+  return run;
+}
+
 async function persistProcedureAdviceChanges() {
   saveLocalBackup();
+  clearTimeout(saveTimer);
   if (!supabaseClient) return true;
   try {
     procedureAdvice = normalizeProcedureAdviceStore(procedureAdvice);
-    const { data, error } = await supabaseClient
+    const { data, error } = await enqueueAppConfigSave(() => supabaseClient
       .from("app_config")
       .update({
         procedure_advice: procedureAdvice,
@@ -980,7 +995,8 @@ async function persistProcedureAdviceChanges() {
       })
       .eq("id", "main")
       .select("procedure_advice, updated_at")
-      .single();
+      .single()
+    );
 
     if (error) throw error;
     if (data?.procedure_advice && typeof data.procedure_advice === "object") {
@@ -1190,42 +1206,45 @@ async function saveConfig() {
     updated_at: new Date().toISOString()
   };
 
-  let { error } = await supabaseClient
-    .from("app_config")
-    .upsert(payload);
+  return enqueueAppConfigSave(async () => {
+    let { error } = await supabaseClient
+      .from("app_config")
+      .upsert(payload);
 
-  // Backward-compatible fallback for older schemas. Local backup still keeps every field.
-  if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice|monthly_targets|notifications/i.test(error.message || "")) {
-    const fallbackPayload = { ...payload };
-    if (/admins|admin_audit_log/i.test(error.message || "")) {
-      delete fallbackPayload.admins;
-      delete fallbackPayload.admin_audit_log;
+    // Backward-compatible fallback for older schemas. Local backup still keeps every field.
+    if (error && /admins|admin_audit_log|swizton_entries|swizton_mapping|petty_cash|procedure_advice|monthly_targets|notifications/i.test(error.message || "")) {
+      const fallbackPayload = { ...payload };
+      if (/admins|admin_audit_log/i.test(error.message || "")) {
+        delete fallbackPayload.admins;
+        delete fallbackPayload.admin_audit_log;
+      }
+      if (/swizton_entries/i.test(error.message || "")) {
+        delete fallbackPayload.swizton_entries;
+      }
+      if (/swizton_mapping/i.test(error.message || "")) {
+        delete fallbackPayload.swizton_mapping;
+      }
+      if (/petty_cash/i.test(error.message || "")) {
+        delete fallbackPayload.petty_cash;
+      }
+      if (/procedure_advice/i.test(error.message || "")) {
+        delete fallbackPayload.procedure_advice;
+      }
+      if (/monthly_targets/i.test(error.message || "")) {
+        delete fallbackPayload.monthly_targets;
+      }
+      if (/notifications/i.test(error.message || "")) {
+        delete fallbackPayload.notifications;
+      }
+      ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
+      if (!error) {
+        console.warn("Supabase app_config is missing newer columns. Re-run schema.sql so all app data is stored in the cloud.");
+      }
     }
-    if (/swizton_entries/i.test(error.message || "")) {
-      delete fallbackPayload.swizton_entries;
-    }
-    if (/swizton_mapping/i.test(error.message || "")) {
-      delete fallbackPayload.swizton_mapping;
-    }
-    if (/petty_cash/i.test(error.message || "")) {
-      delete fallbackPayload.petty_cash;
-    }
-    if (/procedure_advice/i.test(error.message || "")) {
-      delete fallbackPayload.procedure_advice;
-    }
-    if (/monthly_targets/i.test(error.message || "")) {
-      delete fallbackPayload.monthly_targets;
-    }
-    if (/notifications/i.test(error.message || "")) {
-      delete fallbackPayload.notifications;
-    }
-    ({ error } = await supabaseClient.from("app_config").upsert(fallbackPayload));
-    if (!error) {
-      console.warn("Supabase app_config is missing newer columns. Re-run schema.sql so all app data is stored in the cloud.");
-    }
-  }
 
-  if (error) throw error;
+    if (error) throw error;
+    return { error };
+  });
 }
 
 async function saveOneEntry(centreIndex, date) {
@@ -1854,6 +1873,28 @@ function ensureAdviceCentre(centreIndex) {
   return procedureAdvice[centreIndex];
 }
 
+function removeProcedureAdviceEntryFromStore(store, entryId, preferredCentreIndex = null) {
+  const normalized = normalizeProcedureAdviceStore(store);
+  const removeFromCentre = (centreIndex) => {
+    const key = String(centreIndex);
+    const beforeCount = normalized[key]?.length || 0;
+    normalized[key] = (normalized[key] || []).filter((entry) => String(entry.id) !== String(entryId));
+    return normalized[key].length !== beforeCount;
+  };
+
+  if (preferredCentreIndex !== null && preferredCentreIndex !== undefined && removeFromCentre(preferredCentreIndex)) {
+    return { store: normalized, removed: true };
+  }
+
+  const removed = Object.keys(normalized).some((centreIndex) => removeFromCentre(centreIndex));
+  return { store: normalized, removed };
+}
+
+function resolveAdviceCentreIndex(centreIndex) {
+  const resolved = Number(centreIndex);
+  return Number.isInteger(resolved) && resolved >= 0 ? resolved : loggedInCentreIndex;
+}
+
 function selectedAdviceMonth() {
   return document.getElementById("adviceMonthFilter")?.value || todayIST().slice(0, 7);
 }
@@ -2067,16 +2108,16 @@ function renderProcedureAdviceTable(rows) {
       <td>${entry.procedureDate ? displayDate(entry.procedureDate) : ""}</td>
       <td><span class="advice-outcome ${adviceStatusKey(entry)}">${escapeHtml(adviceStatusLabel(adviceStatusKey(entry)))}</span></td>
       <td>${escapeHtml(entry.remarks || "")}</td>
-      ${editable ? `<td class="petty-actions-cell"><button class="text-button" type="button" data-advice-edit="${entry.id}">Edit</button><button class="text-button danger" type="button" data-advice-delete="${entry.id}">Delete</button></td>` : ""}
+      ${editable ? `<td class="petty-actions-cell"><button class="text-button" type="button" data-advice-edit="${entry.id}" data-advice-centre="${entry.centreIndex}">Edit</button><button class="text-button danger" type="button" data-advice-delete="${entry.id}" data-advice-centre="${entry.centreIndex}">Delete</button></td>` : ""}
     </tr>
   `).join("");
 
   if (editable) {
     tbody.querySelectorAll("[data-advice-edit]").forEach((button) => {
-      button.addEventListener("click", () => editProcedureAdviceEntry(button.dataset.adviceEdit));
+      button.addEventListener("click", () => editProcedureAdviceEntry(button.dataset.adviceEdit, button.dataset.adviceCentre));
     });
     tbody.querySelectorAll("[data-advice-delete]").forEach((button) => {
-      button.addEventListener("click", () => deleteProcedureAdviceEntry(button.dataset.adviceDelete));
+      button.addEventListener("click", () => deleteProcedureAdviceEntry(button.dataset.adviceDelete, button.dataset.adviceCentre));
     });
   }
 }
@@ -2186,8 +2227,8 @@ async function saveProcedureAdviceEntry() {
   showToast("Procedure advice saved");
 }
 
-function editProcedureAdviceEntry(entryId) {
-  const entry = ensureAdviceCentre(loggedInCentreIndex).find((item) => String(item.id) === String(entryId));
+function editProcedureAdviceEntry(entryId, centreIndex = loggedInCentreIndex) {
+  const entry = ensureAdviceCentre(resolveAdviceCentreIndex(centreIndex)).find((item) => String(item.id) === String(entryId));
   if (!entry) return;
   procedureAdviceEditingId = entry.id;
   document.getElementById("adviceEntryId").value = entry.id;
@@ -2213,13 +2254,59 @@ function editProcedureAdviceEntry(entryId) {
   document.getElementById("adviceRemarks").value = entry.remarks || "";
 }
 
-async function deleteProcedureAdviceEntry(entryId) {
+async function deleteProcedureAdviceEntryFromCloud(entryId, centreIndex) {
+  clearTimeout(saveTimer);
+  const { data, error } = await enqueueAppConfigSave(async () => {
+    const { data: cfg, error: loadError } = await supabaseClient
+      .from("app_config")
+      .select("procedure_advice")
+      .eq("id", "main")
+      .single();
+    if (loadError) throw loadError;
+
+    const nextAdvice = removeProcedureAdviceEntryFromStore(cfg?.procedure_advice || procedureAdvice, entryId, centreIndex).store;
+    return supabaseClient
+      .from("app_config")
+      .update({
+        procedure_advice: nextAdvice,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", "main")
+      .select("procedure_advice, updated_at")
+      .single();
+  });
+
+  if (error) throw error;
+  if (data?.procedure_advice && typeof data.procedure_advice === "object") {
+    procedureAdvice = normalizeProcedureAdviceStore(data.procedure_advice);
+  }
+  if (data?.updated_at) {
+    lastRemoteConfigUpdatedAt = data.updated_at;
+  }
+}
+
+async function deleteProcedureAdviceEntry(entryId, centreIndex = loggedInCentreIndex) {
   if (!window.confirm("Delete this procedure advice row?")) return;
-  procedureAdvice[loggedInCentreIndex] = ensureAdviceCentre(loggedInCentreIndex)
-    .filter((entry) => String(entry.id) !== String(entryId));
+  const targetCentreIndex = resolveAdviceCentreIndex(centreIndex);
+  const result = removeProcedureAdviceEntryFromStore(procedureAdvice, entryId, targetCentreIndex);
+  if (!result.removed) {
+    showToast("Could not find that advice row. Refreshing list.");
+    renderProcedureAdviceView();
+    return;
+  }
+  procedureAdvice = result.store;
   if (String(procedureAdviceEditingId) === String(entryId)) resetProcedureAdviceForm(false);
-  const saved = await persistProcedureAdviceChanges();
-  if (!saved) return;
+  saveLocalBackup();
+  if (supabaseClient) {
+    try {
+      await deleteProcedureAdviceEntryFromCloud(entryId, targetCentreIndex);
+    } catch (error) {
+      console.error("Procedure advice delete failed:", error);
+      showToast("Could not delete advice from the cloud. Please try again.");
+      return;
+    }
+  }
+  saveLocalBackup();
   renderProcedureAdviceView();
   showToast("Procedure advice deleted");
 }
@@ -4311,11 +4398,15 @@ function removeCenter(index) {
 function refreshCenterLists() {
   const loginSelect = document.getElementById("loginCentre");
   if (loginSelect) {
+    const selectedLoginCentre = loginSelect.value;
     loginSelect.innerHTML = centers
       .map((center, index) => ({ center, index }))
       .filter(({ center }) => (center.company || "KH") === "KH")
       .map(({ center, index }) => `<option value="${index}">${center.name}</option>`)
       .join("");
+    if ([...loginSelect.options].some((option) => option.value === selectedLoginCentre)) {
+      loginSelect.value = selectedLoginCentre;
+    }
   }
   const exportSelect = document.getElementById("exportCentre");
   if (exportSelect) {
