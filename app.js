@@ -3321,9 +3321,9 @@ function setSummaryCards(config) {
 
 function renderKhSummaryCards(totals, grandTotal, percent) {
   setSummaryCards([
-    { label: "Intervention Total", value: grandTotal, note: "Selected procedures only" },
+    { label: "Total Procedures", value: grandTotal, note: "Selected procedures only" },
     { label: "CAG Total", value: totals.cagTotal, note: "All payers combined" },
-    { label: "Network Target", value: totals.target, note: "Admin assigned monthly" },
+    { label: "Total Target", value: totals.target, note: "Admin assigned monthly" },
     { label: "Achievement", value: `${percent}%`, note: `Till ${displayDate(reportDate)}` }
   ]);
 }
