@@ -2272,6 +2272,52 @@ body.centre-mode .advice-entry-panel {
   border-radius: 8px;
 }
 
+.audit-total-summary {
+  padding: 10px;
+  background: #f8fbff;
+  border-bottom: 1px solid var(--line);
+}
+
+.audit-total-summary > strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: .78rem;
+  color: var(--ink);
+}
+
+.audit-total-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.audit-total-card {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.audit-total-card span {
+  font-size: .7rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.audit-total-card b {
+  color: var(--ink);
+  font-size: .9rem;
+}
+
+.audit-total-card em {
+  font-size: .78rem;
+  font-style: normal;
+}
+
 .audit-diff-table {
   width: 100%;
   border-collapse: collapse;

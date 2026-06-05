@@ -5514,9 +5514,62 @@ function renderAuditLog() {
     return changes;
   }
 
+  function sumProcedureEntries(entry, procedureNames = null) {
+    const procedureSet = procedureNames ? new Set(procedureNames) : null;
+    return Object.entries(entry?.procedures || {}).reduce((total, [procedure, payerMap]) => {
+      if (procedureSet && !procedureSet.has(procedure)) return total;
+      return total + ["general", "kasp", "medisep"].reduce((sum, payer) => sum + currencySafeNumber(payerMap?.[payer]), 0);
+    }, 0);
+  }
+
+  function auditEntryTotals(entry = {}) {
+    const referralsTotal = referralMetrics.reduce((total, metric) => total + currencySafeNumber(entry.referrals?.[metric]), 0);
+    return [
+      { label: "Total OP", value: currencySafeNumber(entry.op?.["Total OP"]) },
+      { label: "New OP", value: currencySafeNumber(entry.op?.["New OP"]) },
+      { label: "ECG", value: currencySafeNumber(entry.op?.ECG) },
+      { label: "ECHO", value: currencySafeNumber(entry.op?.ECHO) },
+      { label: "TMT", value: currencySafeNumber(entry.op?.TMT) },
+      { label: "Referral Total", value: referralsTotal },
+      { label: "CAG Total", value: sumProcedureEntries(entry, cagProcedures()) },
+      { label: "Intervention Total", value: sumProcedureEntries(entry, countedProcedures()) },
+      { label: "Procedure Total", value: sumProcedureEntries(entry) }
+    ];
+  }
+
+  function totalSummary(before, after) {
+    const beforeTotals = auditEntryTotals(before);
+    const afterTotals = auditEntryTotals(after);
+    return afterTotals
+      .map((afterTotal, index) => ({
+        label: afterTotal.label,
+        before: beforeTotals[index]?.value || 0,
+        after: afterTotal.value
+      }))
+      .filter((total) => total.before !== total.after);
+  }
+
   container.innerHTML = logs.map(log => {
     const changes = diffSummary(log.before || {}, log.after || {});
+    const totals = totalSummary(log.before || {}, log.after || {});
     const hasChanges = changes.length > 0;
+    const totalRows = totals.length
+      ? `
+        <div class="audit-total-summary" aria-label="Changed totals">
+          <strong>Totals changed</strong>
+          <div class="audit-total-grid">
+            ${totals.map((total) => {
+              const delta = total.after - total.before;
+              return `
+                <div class="audit-total-card">
+                  <span>${escapeHtml(total.label)}</span>
+                  <b>${total.before} → ${total.after}</b>
+                  <em class="${delta >= 0 ? "audit-up" : "audit-down"}">${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta)}</em>
+                </div>`;
+            }).join("")}
+          </div>
+        </div>`
+      : "";
 
     const diffRows = hasChanges
       ? changes.map(c => `
@@ -5550,6 +5603,7 @@ function renderAuditLog() {
         <details class="audit-diff">
           <summary>${hasChanges ? `${changes.length} field${changes.length > 1 ? "s" : ""} changed` : "No changes"}</summary>
           <div class="audit-diff-wrap">
+            ${totalRows}
             <table class="audit-diff-table">
               <thead>
                 <tr><th>Section</th><th>Field</th><th>Before</th><th>After</th><th>Δ</th></tr>
