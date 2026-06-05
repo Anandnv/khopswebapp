@@ -876,7 +876,6 @@ function hasFocusedEditableElement() {
 async function refreshRemoteAdminState() {
   if (!supabaseClient || remoteAppRefreshBusy) return;
   if (document.visibilityState === "hidden") return;
-  if (hasFocusedEditableElement()) return;
 
   remoteAppRefreshBusy = true;
   try {
@@ -908,6 +907,19 @@ async function refreshRemoteCentreState() {
     renderEntryForCurrentDate();
   } catch (error) {
     console.warn("Remote centre refresh failed:", error);
+  }
+}
+
+async function persistProcedureAdviceChanges() {
+  saveLocalBackup();
+  if (!supabaseClient) return true;
+  try {
+    await saveConfig();
+    return true;
+  } catch (error) {
+    console.error("Procedure advice cloud sync failed:", error);
+    showToast("Could not sync advice changes to the cloud. Please try again.");
+    return false;
   }
 }
 
@@ -2044,7 +2056,7 @@ function renderProcedureAdviceView() {
   document.getElementById("adviceTableTitle").textContent = currentRole === "centre" ? "Your Advice Register" : "Consolidated Advice Register";
 }
 
-function saveProcedureAdviceEntry() {
+async function saveProcedureAdviceEntry() {
   if (currentRole !== "centre") {
     showToast("Only centre users can add advice rows.");
     return;
@@ -2093,7 +2105,8 @@ function saveProcedureAdviceEntry() {
 
   const monthInput = document.getElementById("adviceMonthFilter");
   if (monthInput) monthInput.value = date.slice(0, 7);
-  persistSoon();
+  const saved = await persistProcedureAdviceChanges();
+  if (!saved) return;
   resetProcedureAdviceForm(false);
   renderProcedureAdviceView();
   showToast("Procedure advice saved");
@@ -2126,12 +2139,13 @@ function editProcedureAdviceEntry(entryId) {
   document.getElementById("adviceRemarks").value = entry.remarks || "";
 }
 
-function deleteProcedureAdviceEntry(entryId) {
+async function deleteProcedureAdviceEntry(entryId) {
   if (!window.confirm("Delete this procedure advice row?")) return;
   procedureAdvice[loggedInCentreIndex] = ensureAdviceCentre(loggedInCentreIndex)
     .filter((entry) => String(entry.id) !== String(entryId));
   if (String(procedureAdviceEditingId) === String(entryId)) resetProcedureAdviceForm(false);
-  persistSoon();
+  const saved = await persistProcedureAdviceChanges();
+  if (!saved) return;
   renderProcedureAdviceView();
   showToast("Procedure advice deleted");
 }
