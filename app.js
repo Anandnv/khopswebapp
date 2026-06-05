@@ -124,6 +124,7 @@ let partialRestoreContext = null;
 let remoteNotificationRefreshBusy = false;
 let lastRemoteConfigUpdatedAt = "";
 let notificationBroadcastChannel = null;
+let remoteAppRefreshBusy = false;
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
   config: CONFIG,
   getAdmins: () => admins,
@@ -794,24 +795,7 @@ async function loadFromSupabase() {
   }
 
   // 4. Unlock requests
-  const { data: reqs, error: reqsErr } = await supabaseClient
-    .from("unlock_requests")
-    .select("*")
-    .order("requested_at", { ascending: false });
-
-  if (!reqsErr && reqs) {
-    unlockRequests = reqs.map(r => ({
-      id:             r.id,
-      centreIndex:    r.centre_index,
-      centreName:     r.centre_name,
-      date:           r.entry_date,
-      reason:         r.reason,
-      status:         r.status,
-      requestedAt:    r.requested_at,
-      resolvedAt:     r.resolved_at,
-      expiresAt:      r.expires_at
-    }));
-  }
+  await loadUnlockRequestsFromSupabase();
 
   // 5. Audit log (most recent 500)
   const { data: logs, error: logsErr } = await supabaseClient
@@ -840,6 +824,91 @@ async function loadFromSupabase() {
   // Default to yesterday — morning reports show previous day's data
   setReportDate(reportDate);
   return true;
+}
+
+async function loadUnlockRequestsFromSupabase(filterCentreIndex = null) {
+  if (!supabaseClient) return false;
+
+  let query = supabaseClient
+    .from("unlock_requests")
+    .select("*")
+    .order("requested_at", { ascending: false });
+
+  if (filterCentreIndex !== null && filterCentreIndex !== undefined) {
+    query = query.eq("centre_index", filterCentreIndex);
+  }
+
+  const { data: reqs, error } = await query;
+  if (error || !reqs) return false;
+
+  const mappedRequests = reqs.map((record) => ({
+    id: record.id,
+    centreIndex: record.centre_index,
+    centreName: record.centre_name,
+    date: record.entry_date,
+    reason: record.reason,
+    status: record.status,
+    requestedAt: record.requested_at,
+    resolvedAt: record.resolved_at,
+    expiresAt: record.expires_at
+  }));
+
+  if (filterCentreIndex !== null && filterCentreIndex !== undefined) {
+    unlockRequests = [
+      ...unlockRequests.filter((request) => Number(request.centreIndex) !== Number(filterCentreIndex)),
+      ...mappedRequests
+    ].sort((left, right) => new Date(right.requestedAt || 0) - new Date(left.requestedAt || 0));
+  } else {
+    unlockRequests = mappedRequests;
+  }
+
+  return true;
+}
+
+function hasFocusedEditableElement() {
+  const activeElement = document.activeElement;
+  if (!activeElement) return false;
+  if (activeElement.isContentEditable) return true;
+  const tagName = activeElement.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+}
+
+async function refreshRemoteAdminState() {
+  if (!supabaseClient || remoteAppRefreshBusy) return;
+  if (document.visibilityState === "hidden") return;
+  if (hasFocusedEditableElement()) return;
+
+  remoteAppRefreshBusy = true;
+  try {
+    const refreshed = await loadFromSupabase();
+    if (!refreshed) return;
+    refreshCenterRollups(reportDate);
+    refreshCenterLists();
+    renderUnlockRequests();
+    renderPendingAlert();
+    renderConsolidated();
+    renderProcedureAdviceView();
+    renderAdminReportPreview();
+    if (currentRole === "superadmin") renderAdminList();
+  } catch (error) {
+    console.warn("Remote admin refresh failed:", error);
+  } finally {
+    remoteAppRefreshBusy = false;
+  }
+}
+
+async function refreshRemoteCentreState() {
+  if (!supabaseClient || currentRole !== "centre" || loggedInCentreIndex < 0) return;
+  if (document.visibilityState === "hidden") return;
+  if (hasFocusedEditableElement()) return;
+
+  try {
+    const refreshed = await loadUnlockRequestsFromSupabase(loggedInCentreIndex);
+    if (!refreshed) return;
+    renderEntryForCurrentDate();
+  } catch (error) {
+    console.warn("Remote centre refresh failed:", error);
+  }
 }
 
 function mergeLocalSupplementalState() {
@@ -6991,14 +7060,16 @@ async function init() {
     if (bootstrappedDefaults) persistSoon();
   }
 
- // Auto refresh for requests
+  // Keep cloud-hosted sessions updated when other users save in separate tabs/devices.
   setInterval(() => {
-  if (currentRole === "admin" || currentRole === "superadmin") {
-    renderUnlockRequests();
-    renderPendingAlert();
-    renderConsolidated();
-  }
-}, 5000);
+    if (currentRole === "admin" || currentRole === "superadmin") {
+      refreshRemoteAdminState();
+      return;
+    }
+    if (currentRole === "centre") {
+      refreshRemoteCentreState();
+    }
+  }, 5000);
 
   // Hash any legacy plaintext passwords silently on first run
   await migrateLegacyPasswords();

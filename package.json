@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "npx serve .",
+    "dev": "node scripts/static-server.js",
     "build": "node --check app.js",
-    "start": "npx serve .",
+    "start": "node scripts/static-server.js",
     "smoke": "playwright test --config=playwright.config.js",
     "smoke:headed": "playwright test --config=playwright.config.js --headed"
   },

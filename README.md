@@ -8,7 +8,9 @@ Deployable operations dashboard for centre-wise daily entry, consolidated proced
 npm.cmd run dev
 ```
 
-Open the shown local URL.
+Open `http://127.0.0.1:4173`.
+
+The local dev server includes live reload. Saving `html`, `css`, or `js` files in this project should refresh the browser automatically.
 
 Prototype logins:
 
