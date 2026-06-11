@@ -884,6 +884,7 @@ async function refreshRemoteAdminState() {
   if (!supabaseClient || remoteAppRefreshBusy) return;
   if (document.visibilityState === "hidden") return;
   if (isLoginScreenActive()) return;
+  if (hasFocusedEditableElement()) return;
 
   remoteAppRefreshBusy = true;
   try {
@@ -958,7 +959,7 @@ function setupSupabaseRealtime() {
       async () => {
         if (document.visibilityState === "hidden") return;
         if (isLoginScreenActive()) return;
-        if (currentRole === "centre" && hasFocusedEditableElement()) return;
+        if (hasFocusedEditableElement()) return;
         try {
           const refreshed = await loadFromSupabase();
           if (!refreshed) return;
@@ -4265,7 +4266,7 @@ function renderProcedures() {
   }
   tbody.innerHTML = rows.map(({ procedure, index }) => `
     <tr>
-      <td><input type="text" value="${procedure.name}" data-procedure-name="${index}" aria-label="Procedure name" /></td>
+      <td><input type="text" value="${escapeHtml(procedure.name)}" data-procedure-name="${index}" aria-label="Procedure name" /></td>
       <td><input type="checkbox" data-procedure-field="counted" data-procedure-index="${index}" ${procedure.counted ? "checked" : ""} /></td>
       <td><input type="checkbox" data-procedure-field="isCag" data-procedure-index="${index}" ${procedure.isCag ? "checked" : ""} /></td>
       <td>${procedure.active ? "Active" : "Inactive"}</td>
