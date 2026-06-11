@@ -24,7 +24,7 @@ The app supports two storage modes:
 1. Supabase cloud storage, recommended for production.
 2. Browser `localStorage`, fallback for local testing only.
 
-If Supabase is configured in `config.js`, data is stored in the Supabase `app_state` table and stays there until you update or delete it.
+If Supabase is configured in `config.js`, data is stored in normalized Supabase tables (`app_config`, `daily_entries`, `entry_meta`, `unlock_requests`, `audit_log`, `app_backups`) and stays there until you update or delete it.
 
 If Supabase is not configured, data is stored only in that browser's local storage.
 
@@ -33,7 +33,7 @@ If Supabase is not configured, data is stored only in that browser's local stora
 1. Create a Supabase project.
 2. Open the Supabase SQL editor.
 3. Run `supabase/schema.sql`.
-4. Open `config.js`.
+4. Copy `config.example.js` to `config.js` (this file is gitignored and not committed).
 5. Add your project URL and anon key:
 
 ```js
@@ -69,9 +69,9 @@ If you already created the Supabase tables before newer admin, Swizton, or petty
 
 ## Important Production Notes
 
-- `config.js` contains public Supabase anon credentials. That is normal for browser apps, but database policies must be secure before real production use.
-- Current app persistence stores the app state as JSON in one row for fast MVP deployment.
-- A later production hardening phase should split data into normalized tables: centres, users, procedures, daily entries, procedure counts, targets, and audit logs.
+- Copy `config.example.js` to `config.js` locally or in your deploy environment. Never commit real credentials to git.
+- `config.js` contains public Supabase anon credentials. That is normal for browser apps, but the current RLS policies are open — anyone with the anon key can read and write data.
+- Before real production use, replace the prototype login with Supabase Auth and tighten row-level security policies.
 - Enable Supabase backups before using live management data.
 
 
