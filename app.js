@@ -58,8 +58,8 @@ const PETTY_PARTICULAR_OPTIONS = [
   "Call Duty Charge",
   "Camp Expenses - Internal",
   "Camp Expenses - External",
-  "Refeshment - Doctors",
-  "Refeshment - Staffs",
+  "Refreshment - Doctors",
+  "Refreshment - Staffs",
   "Food Expenses - Doctors",
   "Food Expenses - Staffs",
   "Transport Charges",
@@ -73,7 +73,7 @@ const PETTY_PARTICULAR_OPTIONS = [
   "Office Stationary",
   "Purchase - House Keeping",
   "Recharging",
-  "Repairs and Maintanance Exp.",
+  "Repairs and Maintenance Exp.",
   "Other Payments",
   "Other Receipts"
 ];
