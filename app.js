@@ -127,6 +127,8 @@ let notificationBroadcastChannel = null;
 let remoteAppRefreshBusy = false;
 let supabaseRealtimeChannel = null;
 let appConfigSaveQueue = Promise.resolve();
+/** Centre+date keys actively being written to Supabase — block remote overwrite until complete. */
+const pendingEntrySaves = new Set();
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
   config: CONFIG,
   getAdmins: () => admins,
@@ -553,6 +555,67 @@ function deepCloneEntry(entry) {
   return JSON.parse(JSON.stringify(entry));
 }
 
+function normalizeEntryDate(value) {
+  return String(value || "").slice(0, 10);
+}
+
+function entrySaveKey(centreIndex, date) {
+  return `${centreIndex}:${normalizeEntryDate(date)}`;
+}
+
+function captureLocalEntrySnapshot() {
+  const snapshot = { entries: {}, meta: {} };
+  Object.keys(entries).forEach((centreIndex) => {
+    Object.keys(entries[centreIndex] || {}).forEach((date) => {
+      const entry = entries[centreIndex][date];
+      if (!entryHasMeaningfulData(entry)) return;
+      const key = entrySaveKey(centreIndex, date);
+      snapshot.entries[key] = deepCloneEntry(entry);
+      const meta = entryMeta[centreIndex]?.[date];
+      if (meta) snapshot.meta[key] = { ...meta };
+    });
+  });
+  return snapshot;
+}
+
+function mergeEntrySnapshotAfterRemoteLoad(snapshot) {
+  if (!snapshot?.entries) return;
+  Object.keys(snapshot.entries).forEach((key) => {
+    const separator = key.indexOf(":");
+    if (separator < 0) return;
+    const centreIndex = Number(key.slice(0, separator));
+    const date = normalizeEntryDate(key.slice(separator + 1));
+    const localEntry = snapshot.entries[key];
+    const localMeta = snapshot.meta[key];
+    if (!entryHasMeaningfulData(localEntry)) return;
+
+    if (pendingEntrySaves.has(key)) {
+      if (!entries[centreIndex]) entries[centreIndex] = {};
+      if (!entryMeta[centreIndex]) entryMeta[centreIndex] = {};
+      entries[centreIndex][date] = deepCloneEntry(localEntry);
+      if (localMeta) entryMeta[centreIndex][date] = { ...localMeta };
+      return;
+    }
+
+    const cloudMeta = entryMeta[centreIndex]?.[date];
+    const localSavedAt = new Date(localMeta?.savedAt || 0).getTime();
+    const cloudSavedAt = new Date(cloudMeta?.savedAt || 0).getTime();
+    if (!cloudMeta || localSavedAt > cloudSavedAt) {
+      if (!entries[centreIndex]) entries[centreIndex] = {};
+      if (!entryMeta[centreIndex]) entryMeta[centreIndex] = {};
+      entries[centreIndex][date] = deepCloneEntry(localEntry);
+      if (localMeta) entryMeta[centreIndex][date] = { ...localMeta };
+    }
+  });
+}
+
+function commitPendingFormValuesBeforeSave() {
+  const active = document.activeElement;
+  if (active && active !== document.body && typeof active.blur === "function") {
+    active.blur();
+  }
+}
+
 function deepCloneValue(value, fallback = null) {
   if (value === undefined) return fallback;
   return JSON.parse(JSON.stringify(value));
@@ -763,6 +826,7 @@ async function loadFromSupabase() {
   lastRemoteConfigUpdatedAt = cfg.updated_at || lastRemoteConfigUpdatedAt;
 
   // 2. Daily entries → rebuild nested entries object
+  const localEntrySnapshot = captureLocalEntrySnapshot();
   const { data: rows, error: rowsErr } = await supabaseClient
     .from("daily_entries")
     .select("centre_index, entry_date, op, referrals, procedures");
@@ -771,8 +835,9 @@ async function loadFromSupabase() {
     Object.keys(entries).forEach(k => delete entries[k]);
     rows.forEach(r => {
       if (Number(r.centre_index) < 0 || Number(r.centre_index) >= centers.length) return;
+      const entryDate = normalizeEntryDate(r.entry_date);
       if (!entries[r.centre_index]) entries[r.centre_index] = {};
-      entries[r.centre_index][r.entry_date] = {
+      entries[r.centre_index][entryDate] = {
         op:         r.op         || {},
         referrals:  r.referrals  || {},
         procedures: r.procedures || {}
@@ -788,13 +853,17 @@ async function loadFromSupabase() {
   if (!metaErr && metas) {
     Object.keys(entryMeta).forEach(k => delete entryMeta[k]);
     metas.forEach(m => {
+      const entryDate = normalizeEntryDate(m.entry_date);
       if (!entryMeta[m.centre_index]) entryMeta[m.centre_index] = {};
-      entryMeta[m.centre_index][m.entry_date] = {
+      entryMeta[m.centre_index][entryDate] = {
         savedAt: m.saved_at,
         savedBy: m.saved_by
       };
     });
   }
+
+  mergeEntrySnapshotAfterRemoteLoad(localEntrySnapshot);
+  mergeLocalSupplementalState();
 
   // 4. Unlock requests
   await loadUnlockRequestsFromSupabase();
@@ -847,7 +916,7 @@ async function loadUnlockRequestsFromSupabase(filterCentreIndex = null) {
     id: record.id,
     centreIndex: record.centre_index,
     centreName: record.centre_name,
-    date: record.entry_date,
+    date: normalizeEntryDate(record.entry_date),
     reason: record.reason,
     status: record.status,
     requestedAt: record.requested_at,
@@ -885,6 +954,7 @@ async function refreshRemoteAdminState() {
   if (document.visibilityState === "hidden") return;
   if (isLoginScreenActive()) return;
   if (hasFocusedEditableElement()) return;
+  if (pendingEntrySaves.size > 0) return;
 
   remoteAppRefreshBusy = true;
   try {
@@ -960,6 +1030,15 @@ function setupSupabaseRealtime() {
         if (document.visibilityState === "hidden") return;
         if (isLoginScreenActive()) return;
         if (hasFocusedEditableElement()) return;
+        if (pendingEntrySaves.size > 0) return;
+        if (currentRole === "centre") {
+          try {
+            await refreshNotificationState();
+          } catch (error) {
+            console.warn("Supabase realtime notification refresh failed:", error);
+          }
+          return;
+        }
         try {
           const refreshed = await loadFromSupabase();
           if (!refreshed) return;
@@ -1052,9 +1131,10 @@ function mergeLocalSupplementalState() {
     }
     if (state.entries && typeof state.entries === "object" && state.entryMeta && typeof state.entryMeta === "object") {
       Object.keys(state.entryMeta).forEach((centreIndex) => {
-        Object.keys(state.entryMeta[centreIndex] || {}).forEach((date) => {
-          const localMeta = state.entryMeta[centreIndex]?.[date];
-          const localEntry = state.entries[centreIndex]?.[date];
+        Object.keys(state.entryMeta[centreIndex] || {}).forEach((rawDate) => {
+          const date = normalizeEntryDate(rawDate);
+          const localMeta = state.entryMeta[centreIndex]?.[rawDate];
+          const localEntry = state.entries[centreIndex]?.[rawDate];
           if (!localMeta || !localEntry || !entryHasMeaningfulData(localEntry)) return;
           const cloudMeta = entryMeta[centreIndex]?.[date];
           const localSavedAt = new Date(localMeta.savedAt || 0).getTime();
@@ -1159,8 +1239,11 @@ async function saveAll() {
 // Targeted save called right after a centre submits daily entry
 async function persistEntry(centreIndex, date, options = {}) {
   const { saveConfigToo = false, successMessage = "Data saved successfully" } = options;
+  const saveKey = entrySaveKey(centreIndex, date);
+  pendingEntrySaves.add(saveKey);
   saveLocalBackup();
   if (!supabaseClient) {
+    pendingEntrySaves.delete(saveKey);
     showToast("Saved locally (offline mode)");
     return true;
   }
@@ -1182,6 +1265,8 @@ async function persistEntry(centreIndex, date, options = {}) {
     console.error("persistEntry failed:", err);
     showToast("Could not save to the cloud. Check your connection and try again.");
     return false;
+  } finally {
+    pendingEntrySaves.delete(saveKey);
   }
 }
 
@@ -3972,6 +4057,8 @@ async function updateFromDailyEntry() {
     if (!ok) return;
   }
 
+  commitPendingFormValuesBeforeSave();
+
   const center = centers[loggedInCentreIndex];
   const entry = getEntry(loggedInCentreIndex, date);
 
@@ -3984,12 +4071,14 @@ async function updateFromDailyEntry() {
 
   document.querySelectorAll("#opEntry .entry-row:not(.header)").forEach((row) => {
     const metric = row.dataset.metric;
-    entry.op[metric] = currencySafeNumber(row.querySelector("input").value);
+    const input = row.querySelector("input");
+    if (input) entry.op[metric] = currencySafeNumber(input.value);
   });
 
   document.querySelectorAll("#referralEntry .entry-row:not(.header)").forEach((row) => {
     const metric = row.dataset.metric;
-    entry.referrals[metric] = currencySafeNumber(row.querySelector("input").value);
+    const input = row.querySelector("input");
+    if (input) entry.referrals[metric] = currencySafeNumber(input.value);
   });
 
   document.querySelectorAll("#procedureEntryTable tbody tr").forEach((row) => {
@@ -4009,14 +4098,19 @@ async function updateFromDailyEntry() {
   // Record last-updated metadata
   setEntryMeta(loggedInCentreIndex, date, center.name);
 
+  saveLocalBackup();
+
   setReportDate(date);
   refreshCenterRollups(reportDate);
   renderConsolidated();
   renderBars();
   renderPayerSplit();
+
+  const persisted = await persistEntry(loggedInCentreIndex, date, { successMessage: "" });
   renderEntryForCurrentDate();
-  const persisted = await persistEntry(loggedInCentreIndex, date);
-  if (persisted) showToast(`${center.name} entry saved and reflected in reports`);
+  if (persisted) {
+    showToast(`${center.name} entry saved and reflected in reports`);
+  }
 }
 
 function openCentre(index, detailTab = "operations") {
@@ -8045,6 +8139,8 @@ async function adminSaveEntry() {
     return;
   }
 
+  commitPendingFormValuesBeforeSave();
+
   const actorLabel = getCurrentActorLabel();
   const entry = getEntry(centreIndex, date);
   const beforeSnapshot = deepCloneEntry(entry);
@@ -8092,6 +8188,8 @@ async function adminSaveEntry() {
   );
 
   setEntryMeta(centreIndex, date, `${actorLabel} (admin edit)`);
+
+  saveLocalBackup();
 
   setReportDate(date);
   refreshCenterRollups(reportDate);
