@@ -1111,8 +1111,7 @@ function loadFromLocalStorage() {
     if (Array.isArray(state.appNotifications)) appNotifications = normalizeNotifications(state.appNotifications);
     if (Array.isArray(state.admins)) admins = state.admins;
     migrateLegacyTargets(state.reportDate);
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    setReportDate(today);
+    setReportDate(todayIST());
     return true;
   } catch (err) {
     console.warn("localStorage parse failed:", err);
@@ -3286,11 +3285,7 @@ function setReportDate(date) {
   // Update subtitle beneath page title
   const subtitle = document.getElementById("reportDateSubtitle");
   if (subtitle) {
-    const yesterday = (() => {
-      const d = new Date();
-      d.setDate(d.getDate() - 1);
-      return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    })();
+    const yesterday = getYesterdayIST();
     subtitle.textContent = date === yesterday
       ? `Showing: ${displayDate(date)} (yesterday)`
       : `Showing: ${displayDate(date)}`;
@@ -3952,7 +3947,7 @@ async function updateFromDailyEntry() {
   const date = document.getElementById("entryDate").value;
 
   // Guard: disallow future dates
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const today = todayIST();
   if (date > today) {
     showToast("Cannot save data for a future date.");
     return;
@@ -7286,7 +7281,7 @@ async function renderBackups() {
 
 async function ensureDailyBackup() {
   if (!supabaseClient) return;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const today = todayIST();
   const lastBackupDate = localStorage.getItem("lastBackupDate");
   if (lastBackupDate !== today) {
     const backedUp = await createBackup({ silent: true });
@@ -7347,7 +7342,7 @@ async function init() {
   document.getElementById("partialRestoreClearBtn")?.addEventListener("click", clearPartialRestore);
 
   // Ensure entry date input always starts on today
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const today = todayIST();
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) entryDateInput.value = today;
 
@@ -8160,4 +8155,3 @@ function setupAdminEditDataTab() {
 }
 
 init();
-

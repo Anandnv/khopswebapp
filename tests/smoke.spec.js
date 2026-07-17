@@ -32,6 +32,22 @@ async function gotoApp(page) {
   await expect(page.locator("#loginScreen")).toBeVisible();
 }
 
+async function useFixedTime(page, isoTime) {
+  await page.addInitScript((fixedIsoTime) => {
+    const NativeDate = Date;
+    const fixedTime = new NativeDate(fixedIsoTime).getTime();
+    class FixedDate extends NativeDate {
+      constructor(...args) {
+        super(...(args.length ? args : [fixedTime]));
+      }
+      static now() {
+        return fixedTime;
+      }
+    }
+    window.Date = FixedDate;
+  }, isoTime);
+}
+
 async function loginAsCentre(page, centreName = "Tirur") {
   await page.getByRole("button", { name: "Centre" }).click();
   await page.locator("#loginCentre").selectOption({ label: centreName });
@@ -57,7 +73,10 @@ async function loginAsSuperAdmin(page) {
   await expect(page.locator("#appShell")).toBeVisible();
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.title === "today's entry remains editable at 8 PM India time") {
+    await useFixedTime(page, "2026-07-17T14:30:00.000Z"); // 8:00 PM IST
+  }
   await gotoApp(page);
 });
 
@@ -65,6 +84,14 @@ test("centre login opens the daily entry view", async ({ page }) => {
   await loginAsCentre(page);
   await expect(page.locator("#entryCentreName")).toContainText("Tirur");
   await expect(page.locator("#saveBtn")).toBeVisible();
+});
+
+test("today's entry remains editable at 8 PM India time", async ({ page }) => {
+  await loginAsCentre(page);
+
+  await expect(page.locator("#entryDate")).toHaveValue("2026-07-17");
+  await expect(page.locator("#saveBtn")).toBeVisible();
+  await expect(page.locator("#entryLockBanner")).toBeHidden();
 });
 
 test("centre daily entry saves to local storage", async ({ page }) => {
