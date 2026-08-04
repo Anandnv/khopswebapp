@@ -3378,7 +3378,9 @@ function setReportDate(date) {
 }
 
 function getSelectedEntryDate() {
-  return document.getElementById("entryDate")?.value || reportDate;
+  // Entry date should default to TODAY (not reportDate/yesterday)
+  // This allows users to enter current-day data anytime before midnight
+  return document.getElementById("entryDate")?.value || todayIST();
 }
 
 function toggleCompanyDashboardSections() {
@@ -4564,7 +4566,13 @@ function closeSidebar() {
 }
 
 function setupEntryDate() {
-  document.getElementById("entryDate").addEventListener("change", () => {
+  const entryDateEl = document.getElementById("entryDate");
+  if (!entryDateEl) return;
+  
+  // Set max attribute to today (prevent future dates)
+  entryDateEl.max = todayIST();
+  
+  entryDateEl.addEventListener("change", () => {
     renderEntryForCurrentDate();
   });
 }
@@ -7435,10 +7443,13 @@ async function init() {
   document.getElementById("restorePreviewClearBtn")?.addEventListener("click", clearRestorePreview);
   document.getElementById("partialRestoreClearBtn")?.addEventListener("click", clearPartialRestore);
 
-  // Ensure entry date input always starts on today
+  // Ensure entry date input always starts on today and is capped at today
   const today = todayIST();
   const entryDateInput = document.getElementById("entryDate");
-  if (entryDateInput) entryDateInput.value = today;
+  if (entryDateInput) {
+    entryDateInput.value = today;
+    entryDateInput.max = today; // Prevent future dates
+  }
 
   // Wire the report date picker — pre-filled to yesterday, capped at today
   const reportDateInput = document.getElementById("reportDateInput");
