@@ -13,6 +13,7 @@ let activeCompany = "KH";
 const REPORT_DATE_UTILS = window.KHReportDateUtils;
 if (!REPORT_DATE_UTILS) throw new Error("KHReportDateUtils failed to load.");
 const {
+  dateInIST,
   displayDate,
   getYesterdayIST,
   lastEntryDateForMonth,
@@ -127,6 +128,11 @@ let notificationBroadcastChannel = null;
 let remoteAppRefreshBusy = false;
 let supabaseRealtimeChannel = null;
 let appConfigSaveQueue = Promise.resolve();
+// Supabase time is used for the daily lock when available, so a centre
+// workstation with an incorrect clock cannot lock the current day early.
+let trustedServerTimeMs = null;
+let trustedServerPerformanceMs = null;
+let lastEntryCalendarDate = "";
 /** Centre+date keys actively being written to Supabase — block remote overwrite until complete. */
 const pendingEntrySaves = new Set();
 const AUTH_SESSION = window.KHAuthSession?.createAuthSessionTools({
@@ -223,10 +229,33 @@ function reportTypeLabel(type) {
 
 // ─── Date lock helpers ───────────────────────────────────────────────────────
 
+function operationalNow() {
+  if (Number.isFinite(trustedServerTimeMs) && Number.isFinite(trustedServerPerformanceMs)) {
+    const elapsed = Math.max(0, performance.now() - trustedServerPerformanceMs);
+    return new Date(trustedServerTimeMs + elapsed);
+  }
+  return new Date();
+}
+
+function operationalTodayIST() {
+  return dateInIST(operationalNow());
+}
+
+function previousCalendarDate(date) {
+  const [year, month, day] = String(date || "").split("-").map(Number);
+  if (!year || !month || !day) return getYesterdayIST();
+  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
+}
+
+function operationalYesterdayIST() {
+  return previousCalendarDate(operationalTodayIST());
+}
+
 /** Returns true if the date is in the past (not today) for the current centre */
 function isDateLocked(date, centreIndex) {
-  if (date > todayIST()) return false; // future — blocked elsewhere
-  if (date === todayIST()) return false; // today — always editable
+  const today = operationalTodayIST();
+  if (date > today) return false; // future — blocked elsewhere
+  if (date === today) return false; // today — always editable
   // Past date: editable only if an approved unlock exists for this centre+date
   return !getApprovedUnlock(centreIndex, date);
 }
@@ -768,9 +797,34 @@ async function setupPersistence() {
   const hasSupabaseConfig = CONFIG.supabaseUrl && CONFIG.supabaseAnonKey && window.supabase;
   if (hasSupabaseConfig) {
     supabaseClient = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey);
+    await syncTrustedServerClock();
+    reportDate = operationalYesterdayIST();
   }
   persistenceReady = true;
   return loadPersistedState();
+}
+
+async function syncTrustedServerClock() {
+  if (!supabaseClient || typeof supabaseClient.rpc !== "function") return false;
+  const requestStartedAt = performance.now();
+  try {
+    const { data, error } = await supabaseClient.rpc("kh_server_time");
+    const serverTime = typeof data === "string" ? data : data?.server_time;
+    const serverTimeMs = Date.parse(serverTime || "");
+    if (error || !Number.isFinite(serverTimeMs)) {
+      if (error) console.warn("Supabase server clock is unavailable; using the device clock.", error.message);
+      return false;
+    }
+
+    // Add half of the request time so the clock is aligned to when the reply arrived.
+    const requestElapsed = performance.now() - requestStartedAt;
+    trustedServerTimeMs = serverTimeMs + (requestElapsed / 2);
+    trustedServerPerformanceMs = performance.now();
+    return true;
+  } catch (error) {
+    console.warn("Could not sync the Supabase server clock; using the device clock.", error);
+    return false;
+  }
 }
 
 // ─── LOAD ─────────────────────────────────────────────────────────────────────
@@ -3370,7 +3424,7 @@ function setReportDate(date) {
   // Update subtitle beneath page title
   const subtitle = document.getElementById("reportDateSubtitle");
   if (subtitle) {
-    const yesterday = getYesterdayIST();
+    const yesterday = operationalYesterdayIST();
     subtitle.textContent = date === yesterday
       ? `Showing: ${displayDate(date)} (yesterday)`
       : `Showing: ${displayDate(date)}`;
@@ -3380,7 +3434,7 @@ function setReportDate(date) {
 function getSelectedEntryDate() {
   // Entry date should default to TODAY (not reportDate/yesterday)
   // This allows users to enter current-day data anytime before midnight
-  return document.getElementById("entryDate")?.value || todayIST();
+  return document.getElementById("entryDate")?.value || operationalTodayIST();
 }
 
 function toggleCompanyDashboardSections() {
@@ -3922,6 +3976,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
     document.getElementById("entryCentreName").textContent = `${centre.name} Centre Login`;
     document.getElementById("entryAccessMessage").textContent = `This user can enter only ${centre.name} data. Other centres are not selectable.`;
     document.getElementById("lockedCentreName").textContent = centre.name;
+    resetCentreEntryDate();
     renderEntryForCurrentDate();
     renderPettyCashForCentre();
     renderProcedureAdviceView();
@@ -3970,7 +4025,7 @@ function setRole(role, centreIndex = loggedInCentreIndex, adminIndex = -1) {
 
 function renderEntryForCurrentDate() {
   const date = getSelectedEntryDate();
-  const today = todayIST();
+  const today = operationalTodayIST();
   const locked = date !== today && isDateLocked(date, loggedInCentreIndex);
   const approved = !locked && date !== today; // past but unlocked
 
@@ -4034,7 +4089,7 @@ async function updateFromDailyEntry() {
   const date = document.getElementById("entryDate").value;
 
   // Guard: disallow future dates
-  const today = todayIST();
+  const today = operationalTodayIST();
   if (date > today) {
     showToast("Cannot save data for a future date.");
     return;
@@ -4570,11 +4625,40 @@ function setupEntryDate() {
   if (!entryDateEl) return;
   
   // Set max attribute to today (prevent future dates)
-  entryDateEl.max = todayIST();
+  entryDateEl.max = operationalTodayIST();
   
   entryDateEl.addEventListener("change", () => {
     renderEntryForCurrentDate();
   });
+}
+
+function resetCentreEntryDate() {
+  const entryDateEl = document.getElementById("entryDate");
+  if (!entryDateEl) return;
+  const today = operationalTodayIST();
+  entryDateEl.value = today;
+  entryDateEl.max = today;
+  lastEntryCalendarDate = today;
+}
+
+function refreshCentreEntryDateForNewDay() {
+  const today = operationalTodayIST();
+  if (!lastEntryCalendarDate) {
+    lastEntryCalendarDate = today;
+    return;
+  }
+  if (today === lastEntryCalendarDate) return;
+
+  const entryDateEl = document.getElementById("entryDate");
+  if (entryDateEl) {
+    entryDateEl.max = today;
+    // A form that was left open overnight should move to the new working day.
+    if (!entryDateEl.value || entryDateEl.value === lastEntryCalendarDate) {
+      entryDateEl.value = today;
+    }
+  }
+  lastEntryCalendarDate = today;
+  if (currentRole === "centre") renderEntryForCurrentDate();
 }
 
 function setupAdminControls() {
@@ -7444,12 +7528,23 @@ async function init() {
   document.getElementById("partialRestoreClearBtn")?.addEventListener("click", clearPartialRestore);
 
   // Ensure entry date input always starts on today and is capped at today
-  const today = todayIST();
+  const today = operationalTodayIST();
   const entryDateInput = document.getElementById("entryDate");
   if (entryDateInput) {
     entryDateInput.value = today;
     entryDateInput.max = today; // Prevent future dates
   }
+  lastEntryCalendarDate = today;
+
+  setInterval(() => {
+    refreshCentreEntryDateForNewDay();
+  }, 30_000);
+  setInterval(() => {
+    syncTrustedServerClock();
+  }, 10 * 60_000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") syncTrustedServerClock();
+  });
 
   // Wire the report date picker — pre-filled to yesterday, capped at today
   const reportDateInput = document.getElementById("reportDateInput");

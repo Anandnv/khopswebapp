@@ -111,6 +111,20 @@ create table if not exists public.app_backups (
 create index if not exists app_backups_created_at_idx
   on public.app_backups (created_at desc);
 
+-- ── Authoritative application clock ──────────────────────────────────────────
+-- The browser uses this for daily-entry locking, rather than trusting a centre
+-- computer whose calendar may be set incorrectly.
+create or replace function public.kh_server_time()
+returns timestamptz
+language sql
+stable
+as $$
+  select now();
+$$;
+
+grant execute on function public.kh_server_time() to anon, authenticated;
+notify pgrst, 'reload schema';
+
 -- ── 7. Row Level Security ──────────────────────────────────────────────────────
 -- Mirrors your existing app_state policy pattern exactly.
 -- app_config is a single-row table (id = 'main') — INSERT and UPDATE are

@@ -74,8 +74,8 @@ async function loginAsSuperAdmin(page) {
 }
 
 test.beforeEach(async ({ page }, testInfo) => {
-  if (testInfo.title === "today's entry remains editable at 8 PM India time") {
-    await useFixedTime(page, "2026-07-17T14:30:00.000Z"); // 8:00 PM IST
+  if (testInfo.title === "today's entry remains editable at 7:45 PM India time") {
+    await useFixedTime(page, "2026-08-05T14:15:00.000Z"); // 7:45 PM IST
   }
   await gotoApp(page);
 });
@@ -86,10 +86,10 @@ test("centre login opens the daily entry view", async ({ page }) => {
   await expect(page.locator("#saveBtn")).toBeVisible();
 });
 
-test("today's entry remains editable at 8 PM India time", async ({ page }) => {
+test("today's entry remains editable at 7:45 PM India time", async ({ page }) => {
   await loginAsCentre(page);
 
-  await expect(page.locator("#entryDate")).toHaveValue("2026-07-17");
+  await expect(page.locator("#entryDate")).toHaveValue("2026-08-05");
   await expect(page.locator("#saveBtn")).toBeVisible();
   await expect(page.locator("#entryLockBanner")).toBeHidden();
 });

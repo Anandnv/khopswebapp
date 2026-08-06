@@ -48,6 +48,10 @@ For a stricter production build, replace the simple prototype login with Supabas
 
 If you already created the Supabase tables before newer admin, Swizton, or petty-cash features were added, re-run `supabase/schema.sql` once so `app_config` gets the latest `admins`, `admin_audit_log`, `swizton_entries`, `swizton_mapping`, and `petty_cash` columns. Without that update, newer data may only survive in the current browser's local backup.
 
+### Daily entry clock
+
+Before deploying the daily-entry locking fix to an existing Supabase project, run `supabase/20260806_server_time.sql` in the Supabase SQL Editor once. This makes Supabase the authoritative clock for date locking, preventing a workstation with an incorrect date from locking the current day's entry early.
+
 `enableDemoData` should stay `false` for production. When false, the app will not auto-seed sample monthly entries after a database wipe.
 
 ## Deploy To Vercel
